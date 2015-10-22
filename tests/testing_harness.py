@@ -339,6 +339,9 @@ class PyAPITestHarness(TestHarness):
         """Make sure the current inputs agree with the _true standard."""
         compare = filecmp.cmp('inputs_test.dat', 'inputs_true.dat')
         if not compare:
+            f = open('inputs_test.dat')
+            for line in f.readlines(): print(line)
+            f.close()
             os.rename('inputs_test.dat', 'inputs_error.dat')
         assert compare, 'Input files are broken.'
 

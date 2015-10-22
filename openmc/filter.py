@@ -387,8 +387,12 @@ class Filter(object):
 
             # Use lower energy bound to find index for energy Filters
             elif self.type in ['energy', 'energyout']:
-                val = np.where(self.bins == filter_bin[0])[0][0]
-                filter_index = val
+                deltas = np.abs(self.bins - filter_bin[1]) / filter_bin[1]
+                min_delta = np.min(deltas)
+                if min_delta < 1E-3:
+                    filter_index = deltas.argmin() - 1
+                else:
+                    raise ValueError
 
             # Filter bins for distribcells are "IDs" of each unique placement
             # of the Cell in the Geometry (integers starting at 0)

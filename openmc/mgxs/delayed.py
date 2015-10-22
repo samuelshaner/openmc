@@ -1,3 +1,5 @@
+from __future__ import division
+
 from collections import Iterable, OrderedDict
 from numbers import Integral
 import os
@@ -25,8 +27,6 @@ DELAYED_MGXS_TYPES = ['delayed-nu-fission',
 # Maximum number of delayed groups
 # TODO: Get value from OpenMC
 MAX_DELAYED_GROUPS = 8
-
-
 
 # Supported domain types
 # TODO: Implement Mesh domains
@@ -180,12 +180,12 @@ class DelayedMGXS(MGXS):
                 filter_bins.append((self.energy_groups.get_group_bounds(group),))
 
         # Construct list of delayed groups
-        if delayed_groups != 'all':
+        if delayed_groups not in ['all', 'sum']:
             cv.check_iterable_type('delayed groups', delayed_groups, Integral)
             for group in delayed_groups:
                 filters.append('delayedgroup')
                 filter_bins.append((group,))
-
+                
         # Construct a collection of the nuclides to retrieve from the xs tally
         if self.by_nuclide:
             if nuclides == 'all' or nuclides == 'sum' or nuclides == ['sum']:
@@ -195,15 +195,19 @@ class DelayedMGXS(MGXS):
         else:
             query_nuclides = ['total']
 
+        if delayed_groups == 'sum' or delayed_groups == ['sum']:
+            xs_tally = self.xs_tally.summation(filter_type='delayedgroup',
+                                               filters=range(1,MAX_DELAYED_GROUPS))
+            
         # If user requested the sum for all nuclides, use tally summation
         if nuclides == 'sum' or nuclides == ['sum']:
             xs_tally = self.xs_tally.summation(nuclides=query_nuclides)
-            xs = xs_tally.get_values(filters=filters,
-                                     filter_bins=filter_bins, value=value)
+            xs = xs_tally.get_values(filters=filters, filter_bins=filter_bins,
+                                     value=value)
         else:
             xs = self.xs_tally.get_values(filters=filters, filter_bins=filter_bins,
                                           nuclides=query_nuclides, value=value)
-
+            
         # Divide by atom number densities for microscopic cross sections
         if xs_type == 'micro':
             if self.by_nuclide:
@@ -333,6 +337,7 @@ class DelayedMGXS(MGXS):
 
         print(string)
 
+
 class DelayedNuFissionXS(DelayedMGXS):
     """A fission delayed-neutron production multi-group cross section."""
 
@@ -445,7 +450,6 @@ class Beta(DelayedMGXS):
         delayedgroup = openmc.Filter('delayedgroup',
                                      range(1,MAX_DELAYED_GROUPS+1))
         filters = [[energy, delayedgroup], [energy]]
-        #filters = [[delayedgroup], []]
 
         # Initialize the Tallies
         super(Beta, self).create_tallies(scores, filters, keys, estimator)
@@ -459,7 +463,7 @@ class Beta(DelayedMGXS):
         super(Beta, self).compute_xs()
 
 
-class ChiDelayed(MGXS):
+class ChiDelayed(DelayedMGXS):
     """The delayed-neutron fission spectrum."""
 
     def __init__(self, domain=None, domain_type=None,
@@ -486,8 +490,8 @@ class ChiDelayed(MGXS):
         group_edges = self.energy_groups.group_edges
         energyout = openmc.Filter('energyout', group_edges)
         energyin = openmc.Filter('energy', [group_edges[0], group_edges[-1]])
-        #delayedgroup = openmc.Filter('delayedgroup',
-        #                             range(1,MAX_DELAYED_GROUPS+1))
+        delayedgroup = openmc.Filter('delayedgroup',
+                                     range(1,MAX_DELAYED_GROUPS+1))
         filters = [[energyin], [energyout]]
 
         # Intialize the Tallies
@@ -513,7 +517,8 @@ class ChiDelayed(MGXS):
         super(ChiDelayed, self).compute_xs()
 
     def get_xs(self, groups='all', subdomains='all', nuclides='all',
-               xs_type='macro', order_groups='increasing', value='mean'):
+               xs_type='macro', order_groups='increasing', value='mean',
+               delayed_groups='all'):
         """Returns an array of the delayed-neutron fission spectrum.
 
         This method constructs a 2D NumPy array for the requested multi-group
@@ -523,6 +528,8 @@ class ChiDelayed(MGXS):
         ----------
         groups : Iterable of Integral or 'all'
             Energy groups of interest. Defaults to 'all'.
+        delayed_groups: Iterable of Integral or 'all' or 'sum'
+            Delayed neutron precursor groups
         subdomains : Iterable of Integral or 'all'
             Subdomain IDs of interest. Defaults to 'all'.
         nuclides : Iterable of str or 'all' or 'sum'
@@ -579,13 +586,29 @@ class ChiDelayed(MGXS):
                 filters.append('energyout')
                 filter_bins.append((self.energy_groups.get_group_bounds(group),))
 
+        # Construct list of delayed groups
+        if delayed_groups not in ['all', 'sum']:
+            cv.check_iterable_type('delayed groups', delayed_groups, Integral)
+            for group in delayed_groups:
+                filters.append('delayedgroup')
+                filter_bins.append((group,))
+
+        delayed_nu_fission_in = self.tallies['delayed-nu-fission-in']
+        delayed_nu_fission_out = self.tallies['delayed-nu-fission-out']
+
+        if delayed_groups == 'sum' or delayed_groups == ['sum']:
+            delayed_nu_fission_in = delayed_nu_fission_in.summation(
+                filter_type='delayedgroup', filters=range(1,MAX_DELAYED_GROUPS))
+            delayed_nu_fission_out = delayed_nu_fission_out.summation(
+                filter_type='delayedgroup', filters=range(1,MAX_DELAYED_GROUPS))
+
         # If chi was computed for each nuclide in the domain
         if self.by_nuclide:
 
             # Get the sum as the fission source weighted average chi for all
             # nuclides in the domain
             if nuclides == 'sum' or nuclides == ['sum']:
-
+                
                 # Retrieve the fission production tallies
                 delayed_nu_fission_in = self.tallies['delayed-nu-fission-in']
                 delayed_nu_fission_out = self.tallies['delayed-nu-fission-out']
@@ -709,6 +732,7 @@ class ChiDelayed(MGXS):
 
         return df
 
+
 class ChiPrompt(MGXS):
     """The prompt-neutron fission spectrum."""
 
@@ -738,8 +762,6 @@ class ChiPrompt(MGXS):
         group_edges = self.energy_groups.group_edges
         energyout = openmc.Filter('energyout', group_edges)
         energyin = openmc.Filter('energy', [group_edges[0], group_edges[-1]])
-        #delayedgroup = openmc.Filter('delayedgroup',
-        #                             range(1,MAX_DELAYED_GROUPS+1))
         filters = [[energyin], [energyout], [energyin], [energyout]]
 
         # Intialize the Tallies

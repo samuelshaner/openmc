@@ -1,3 +1,5 @@
+from __future__ import division
+
 from collections import Iterable, OrderedDict
 from numbers import Integral
 import os
@@ -83,7 +85,7 @@ class MGXS(object):
     tally_trigger : Trigger
         An (optional) tally precision trigger given to each tally used to
         compute the cross section
-    tallies : dict
+    tallies : OrderedDict
         OpenMC tallies needed to compute the multi-group cross section
     xs_tally : Tally
         Derived tally for the multi-group cross section. This attribute
@@ -186,7 +188,7 @@ class MGXS(object):
 
     @property
     def num_subdomains(self):
-        tally = self.tallies.values()[0]
+        tally = list(self.tallies.values())[0]
         domain_filter = tally.find_filter(self.domain_type)
         return domain_filter.num_bins
 
@@ -1603,13 +1605,35 @@ class NuScatterXS(MGXS):
 
 
 class ScatterMatrixXS(MGXS):
-    """A scattering matrix multi-group cross section."""
+    """A scattering matrix multi-group cross section.
+
+    Attributes
+    ----------
+    correction : 'P0' or None
+        Apply the P0 correction to scattering matrices if set to 'P0'
+
+    """
 
     def __init__(self, domain=None, domain_type=None,
                  groups=None, by_nuclide=False, name=''):
         super(ScatterMatrixXS, self).__init__(domain, domain_type,
                                               groups, by_nuclide, name)
         self._rxn_type = 'scatter matrix'
+        self._correction = 'P0'
+
+    def __deepcopy__(self, memo):
+        clone = super(ScatterMatrixXS, self).__deepcopy__(memo)
+        clone._correction = self.correction
+        return clone
+
+    @property
+    def correction(self):
+        return self._correction
+
+    @correction.setter
+    def correction(self, correction):
+        cv.check_value('correction', correction, ('P0', None))
+        self._correction = correction
 
     def create_tallies(self):
         """Construct the OpenMC tallies needed to compute this cross section.
@@ -1625,8 +1649,12 @@ class ScatterMatrixXS(MGXS):
         energyout = openmc.Filter('energyout', group_edges)
 
         # Create a list of scores for each Tally to be created
-        scores = ['flux', 'scatter', 'scatter-P1']
-        filters = [[energy], [energy, energyout], [energyout]]
+        if self.correction == 'P0':
+            scores = ['flux', 'scatter', 'scatter-P1']
+            filters = [[energy], [energy, energyout], [energyout]]
+        else:
+            scores = ['flux', 'scatter']
+            filters = [[energy], [energy, energyout]]
 
         estimator = 'analog'
         keys = scores
@@ -1648,7 +1676,7 @@ class ScatterMatrixXS(MGXS):
         """
 
         # If using P0 correction subtract scatter-P1 from the diagonal
-        if correction == 'P0':
+        if self.correction == 'P0':
             scatter_p1 = self.tallies['scatter-P1']
             scatter_p1 = scatter_p1.get_slice(scores=['scatter-P1'])
             energy_filter = openmc.Filter(type='energy')
@@ -1924,16 +1952,22 @@ class NuScatterMatrixXS(ScatterMatrixXS):
 
         """
 
-        # Create a list of scores for each Tally to be created
-        scores = ['flux', 'nu-scatter', 'scatter-P1']
-        estimator = 'analog'
-        keys = ['flux', 'scatter', 'scatter-P1']
-
         # Create the non-domain specific Filters for the Tallies
         group_edges = self.energy_groups.group_edges
         energy = openmc.Filter('energy', group_edges)
         energyout = openmc.Filter('energyout', group_edges)
-        filters = [[energy], [energy, energyout], [energyout]]
+
+        # Create a list of scores for each Tally to be created
+        if self.correction == 'P0':
+            scores = ['flux', 'nu-scatter', 'scatter-P1']
+            estimator = 'analog'
+            keys = ['flux', 'scatter', 'scatter-P1']
+            filters = [[energy], [energy, energyout], [energyout]]
+        else:
+            scores = ['flux', 'nu-scatter']
+            estimator = 'analog'
+            keys = ['flux', 'scatter']
+            filters = [[energy], [energy, energyout]]
 
         # Intialize the Tallies
         super(ScatterMatrixXS, self).create_tallies(scores, filters,
