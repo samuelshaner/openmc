@@ -27,7 +27,7 @@ class Filter(object):
     type : str
         The type of the tally filter. Acceptable values are "universe",
         "material", "cell", "cellborn", "surface", "mesh", "energy",
-        "energyout", and "distribcell".
+        "energyout", "distribcell", and "delayedgroup".
     bins : Integral or Iterable of Integral or Iterable of Real
         The bins for the filter. This takes on different meaning for different
         filters. See the OpenMC online documentation for more details.
@@ -125,7 +125,8 @@ class Filter(object):
             return 0
         elif self.type in ['energy', 'energyout']:
             return len(self.bins) - 1
-        elif self.type in ['cell', 'cellborn', 'surface', 'universe', 'material']:
+        elif self.type in ['cell', 'cellborn', 'surface', 'universe',
+                           'material', 'delayedgroup']:
             return len(self.bins)
         else:
             return self._num_bins
@@ -169,8 +170,8 @@ class Filter(object):
             bins = list(bins)
 
         if self.type in ['cell', 'cellborn', 'surface', 'material',
-                          'universe', 'distribcell', 'delayedgroup']:
-            check_iterable_type('filter bins', bins, Integral)
+                         'universe', 'distribcell', 'delayedgroup']:
+            cv.check_iterable_type('filter bins', bins, Integral)
             for edge in bins:
                 cv.check_greater_than('filter bin', edge, 0, equality=True)
 
@@ -331,7 +332,10 @@ class Filter(object):
         elif self.type != other.type:
             return False
         elif self.type in ['energy', 'energyout']:
-            return np.all(self.bins == other.bins)
+            if len(self.bins) != len(other.bins):
+                return False
+            else:
+                return np.allclose(self.bins, other.bins)
 
         for bin in other.bins:
             if bin not in self.bins:

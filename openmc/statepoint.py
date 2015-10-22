@@ -1,4 +1,5 @@
 import sys
+import re
 
 import numpy as np
 
@@ -410,14 +411,12 @@ class StatePoint(object):
 
                 # Add the scores to the Tally
                 for j, score in enumerate(scores):
-                    score = score.decode()
-                    # If this is a scattering moment, insert the scattering order
-                    if '-n' in score:
-                        score = score.replace('-n', '-' + moments[j].decode())
-                    elif '-pn' in score:
-                        score = score.replace('-pn', '-' + moments[j].decode())
-                    elif '-yn' in score:
-                        score = score.replace('-yn', '-' + moments[j].decode())
+
+                    # If this is a moment, use generic moment order
+                    regexp = re.compile(r'-n$|-pn$|-yn$')
+                    if regexp.search(score) is not None:
+                      score = score.strip(regexp.findall(score)[0])
+                      score += '-' + moments[j]
 
                     tally.add_score(score)
 
