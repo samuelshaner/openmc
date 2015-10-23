@@ -29,7 +29,8 @@ MGXS_TYPES = ['total',
               'nu-scatter',
               'scatter matrix',
               'nu-scatter matrix',
-              'chi']
+              'chi',
+              'velocity']
 
 
 # Supported domain types
@@ -2219,3 +2220,42 @@ class Chi(MGXS):
             df['std. dev.'] *= np.tile(densities, tile_factor)
 
         return df
+
+
+class Velocity(MGXS):
+    """A multi-group velocity."""
+
+    def __init__(self, domain=None, domain_type=None,
+                 groups=None, by_nuclide=False, name=''):
+        super(Velocity, self).__init__(domain, domain_type,
+                                      groups, by_nuclide, name)
+        self._rxn_type = 'velocity'
+
+    def create_tallies(self):
+        """Construct the OpenMC tallies needed to compute this cross section.
+
+        This method constructs two tracklength tallies to compute the 'flux'
+        and 'inverse-velocity' reaction rates in the spatial domain and energy
+        groups of interest.
+
+        """
+
+        # Create a list of scores for each Tally to be created
+        scores = ['flux', 'inverse-velocity']
+        estimator = 'tracklength'
+        keys = scores
+
+        # Create the non-domain specific Filters for the Tallies
+        group_edges = self.energy_groups.group_edges
+        energy_filter = openmc.Filter('energy', group_edges)
+        filters = [[energy_filter], [energy_filter]]
+
+        # Initialize the Tallies
+        super(Velocity, self).create_tallies(scores, filters, keys, estimator)
+
+    def compute_xs(self):
+        """Computes the multi-group velocity using OpenMC tally arithmetic.
+        """
+
+        self._xs_tally = self.tallies['flux'] / self.tallies['inverse-velocity']
+        super(Velocity, self).compute_xs()

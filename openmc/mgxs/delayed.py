@@ -410,16 +410,16 @@ class PromptNuFissionXS(MGXS):
 
         # Initialize the Tallies
         super(PromptNuFissionXS, self).create_tallies(scores, filters,
-                                                       keys, estimator)
+                                                      keys, estimator)
 
     def compute_xs(self):
         """Computes the multi-group nu-fission cross sections using OpenMC
         tally arithmetic."""
 
-        self._xs_tally = (self.tallies['nu-fission'] - \
-                          self.tallies['delayed-nu-fission']) \
-                         / self.tallies['flux']
+        self._xs_tally = self.tallies['nu-fission'] - self.tallies['delayed-nu-fission']
+        self._xs_tally /= self.tallies['flux']
         super(PromptNuFissionXS, self).compute_xs()
+
 
 class Beta(DelayedMGXS):
     """The delayed-neutron fraction in each group."""
