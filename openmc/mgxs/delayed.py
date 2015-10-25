@@ -446,10 +446,10 @@ class Beta(DelayedMGXS):
 
         # Create the non-domain specific Filters for the Tallies
         group_edges = self.energy_groups.group_edges
-        energy = openmc.Filter('energy', group_edges)
+        energyout = openmc.Filter('energyout', group_edges)
         delayedgroup = openmc.Filter('delayedgroup',
                                      range(1,MAX_DELAYED_GROUPS+1))
-        filters = [[energy, delayedgroup], [energy]]
+        filters = [[energyout, delayedgroup], [energyout]]
 
         # Initialize the Tallies
         super(Beta, self).create_tallies(scores, filters, keys, estimator)
