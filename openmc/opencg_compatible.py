@@ -731,6 +731,17 @@ def get_openmc_cell(opencg_cell):
         translation = np.asarray(opencg_cell.translation, dtype=np.float64)
         openmc_cell.translation = translation
 
+    if opencg_cell.d_translation is not None and opencg_cell.clock is not None:
+
+        if opencg_cell.translation is None:
+            openmc_cell.translation = np.zeros(3, dtype=np.float64)
+
+        d_translation = np.asarray(opencg_cell.d_translation, dtype=np.float64)
+        print d_translation
+        print opencg_cell.clock.time
+        print openmc_cell.translation
+        openmc_cell.translation += d_translation * opencg_cell.clock.time
+
     surfaces = opencg_cell.surfaces
 
     for surface_id in surfaces:
