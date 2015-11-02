@@ -737,9 +737,6 @@ def get_openmc_cell(opencg_cell):
             openmc_cell.translation = np.zeros(3, dtype=np.float64)
 
         d_translation = np.asarray(opencg_cell.d_translation, dtype=np.float64)
-        print d_translation
-        print opencg_cell.clock.time
-        print openmc_cell.translation
         openmc_cell.translation += d_translation * opencg_cell.clock.time
 
     surfaces = opencg_cell.surfaces
