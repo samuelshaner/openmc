@@ -27,7 +27,7 @@ class Filter(object):
     type : str
         The type of the tally filter. Acceptable values are "universe",
         "material", "cell", "cellborn", "surface", "mesh", "energy",
-        "energyout", and "distribcell".
+        "energyout", "distribcell", and "delayedgroup".
     bins : Integral or Iterable of Integral or Iterable of Real
         The bins for the filter. This takes on different meaning for different
         filters. See the OpenMC online documentation for more details.
@@ -125,7 +125,8 @@ class Filter(object):
             return 0
         elif self.type in ['energy', 'energyout']:
             return len(self.bins) - 1
-        elif self.type in ['cell', 'cellborn', 'surface', 'universe', 'material']:
+        elif self.type in ['cell', 'cellborn', 'surface', 'universe',
+                           'material', 'delayedgroup']:
             return len(self.bins)
         else:
             return self._num_bins

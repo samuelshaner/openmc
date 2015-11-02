@@ -341,7 +341,12 @@ class Library(object):
         ----------
         domain : Material or Cell or Universe or Integral
             The material, cell, or universe object of interest (or its ID)
-        mgxs_type : {'total', 'transport', 'absorption', 'capture', 'fission', 'nu-fission', 'scatter', 'nu-scatter', 'scatter matrix', 'nu-scatter matrix', 'chi'}
+
+        mgxs_type : {'total', 'transport', 'absorption', 'capture', 'fission',
+                     'nu-fission', 'scatter', 'nu-scatter', 'scatter matrix',
+                     'nu-scatter matrix', 'chi', 'delayed-nu-fission',
+                     'delayed-chi'}
+
             The type of multi-group cross section object to return
 
         Returns
