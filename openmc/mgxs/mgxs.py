@@ -31,7 +31,7 @@ MGXS_TYPES = ['total',
               'nu-scatter matrix',
               'chi',
               'velocity',
-              'prompt-neutron-lifetime']
+              'prompt neutron lifetime']
 
 
 # Supported domain types
@@ -309,6 +309,10 @@ class MGXS(object):
             mgxs = NuScatterMatrixXS(domain, domain_type, energy_groups)
         elif mgxs_type == 'chi':
             mgxs = Chi(domain, domain_type, energy_groups)
+        elif mgxs_type == 'velocity':
+            mgxs = Velocity(domain, domain_type, energy_groups)
+        elif mgxs_type == 'prompt neutron lifetime':
+            mgxs = PromptNeutronLifetime(domain, domain_type, energy_groups)
 
         mgxs.by_nuclide = by_nuclide
         mgxs.name = name
@@ -422,12 +426,12 @@ class MGXS(object):
 
         return densities
 
-    def create_tallies(self, scores, all_filters, keys, estimator):
+    def _create_tallies(self, scores, all_filters, keys, estimator):
         """Instantiates tallies needed to compute the multi-group cross section.
 
         This is a helper method for MGXS subclasses to create tallies
         for input file generation. The tallies are stored in the tallies dict.
-        This method is called by each subclass' create_tallies(...) method
+        This method is called by each subclass' tallies property getter
         which define the parameters given to this parent class method.
 
         Parameters
@@ -1288,7 +1292,7 @@ class TotalXS(MGXS):
         """
 
         # Instantiate tallies if they do not exist
-        if super(TotalXS, self).tallies is None:
+        if self._tallies is None:
 
             # Create a list of scores for each Tally to be created
             scores = ['flux', 'total']
@@ -1301,10 +1305,9 @@ class TotalXS(MGXS):
             filters = [[energy_filter], [energy_filter]]
 
             # Initialize the Tallies
-            super(TotalXS, self).create_tallies(scores, filters, 
-                                                keys, estimator)
+            self._create_tallies(scores, filters, keys, estimator)
 
-        return super(TotalXS, self).tallies
+        return self._tallies
 
     def compute_xs(self):
         """Computes the multi-group total cross sections using OpenMC
@@ -1335,7 +1338,7 @@ class TransportXS(MGXS):
         """
 
         # Instantiate tallies if they do not exist
-        if super(TransportXS, self).tallies is None:
+        if self._tallies is None:
 
             # Create a list of scores for each Tally to be created
             scores = ['flux', 'total', 'scatter-P1']
@@ -1349,10 +1352,9 @@ class TransportXS(MGXS):
             filters = [[energy_filter], [energy_filter], [energyout_filter]]
 
             # Initialize the Tallies
-            super(TransportXS, self).create_tallies(scores, filters,
-                                                    keys, estimator)
+            self._create_tallies(scores, filters, keys, estimator)
 
-        return super(TransportXS, self).tallies
+        return self._tallies
 
     def compute_xs(self):
         """Computes the multi-group transport cross sections using OpenMC
@@ -1388,7 +1390,7 @@ class AbsorptionXS(MGXS):
         """
 
         # Instantiate tallies if they do not exist
-        if super(AbsorptionXS, self).tallies is None:
+        if self._tallies is None:
 
             # Create a list of scores for each Tally to be created
             scores = ['flux', 'absorption']
@@ -1401,10 +1403,9 @@ class AbsorptionXS(MGXS):
             filters = [[energy_filter], [energy_filter]]
 
             # Initialize the Tallies
-            super(AbsorptionXS, self).create_tallies(scores, filters,
-                                                     keys, estimator)
+            self._create_tallies(scores, filters, keys, estimator)
 
-        return super(AbsorptionXS, self).tallies
+        return self._tallies
 
     def compute_xs(self):
         """Computes the multi-group absorption cross sections using OpenMC
@@ -1441,7 +1442,7 @@ class CaptureXS(MGXS):
         """
 
         # Instantiate tallies if they do not exist
-        if super(CaptureXS, self).tallies is None:
+        if self._tallies is None:
 
             # Create a list of scores for each Tally to be created
             scores = ['flux', 'absorption', 'fission']
@@ -1454,10 +1455,9 @@ class CaptureXS(MGXS):
             filters = [[energy_filter], [energy_filter], [energy_filter]]
 
             # Initialize the Tallies
-            super(CaptureXS, self).create_tallies(scores, filters, 
-                                                  keys, estimator)
+            self._create_tallies(scores, filters, keys, estimator)
 
-        return super(CaptureXS, self).tallies
+        return self._tallies
 
     def compute_xs(self):
         """Computes the multi-group capture cross sections using OpenMC
@@ -1488,7 +1488,7 @@ class FissionXS(MGXS):
         """
 
         # Instantiate tallies if they do not exist
-        if super(FissionXS, self).tallies is None:
+        if self._tallies is None:
 
             # Create a list of scores for each Tally to be created
             scores = ['flux', 'fission']
@@ -1501,10 +1501,9 @@ class FissionXS(MGXS):
             filters = [[energy_filter], [energy_filter]]
 
             # Initialize the Tallies
-            super(FissionXS, self).create_tallies(scores, filters, 
-                                                  keys, estimator)
+            self._create_tallies(scores, filters, keys, estimator)
 
-        return super(FissionXS, self).tallies
+        return self._tallies
 
     def compute_xs(self):
         """Computes the multi-group fission cross sections using OpenMC
@@ -1534,7 +1533,7 @@ class NuFissionXS(MGXS):
         """
 
         # Instantiate tallies if they do not exist
-        if super(NuFissionXS, self).tallies is None:
+        if self._tallies is None:
 
             # Create a list of scores for each Tally to be created
             scores = ['flux', 'nu-fission']
@@ -1547,10 +1546,9 @@ class NuFissionXS(MGXS):
             filters = [[energy_filter], [energy_filter]]
 
             # Initialize the Tallies
-            super(NuFissionXS, self).create_tallies(scores, filters,
-                                                    keys, estimator)
+            self._create_tallies(scores, filters, keys, estimator)
 
-        return super(NuFissionXS, self).tallies
+        return self._tallies
 
     def compute_xs(self):
         """Computes the multi-group nu-fission cross sections using OpenMC
@@ -1580,7 +1578,7 @@ class ScatterXS(MGXS):
         """
 
         # Instantiate tallies if they do not exist
-        if super(ScatterXS, self).tallies is None:
+        if self._tallies is None:
 
             # Create a list of scores for each Tally to be created
             scores = ['flux', 'scatter']
@@ -1593,10 +1591,9 @@ class ScatterXS(MGXS):
             filters = [[energy_filter], [energy_filter]]
 
             # Intialize the Tallies
-            super(ScatterXS, self).create_tallies(scores, filters, 
-                                                  keys, estimator)
+            self._create_tallies(scores, filters, keys, estimator)
 
-        return super(ScatterXS, self).tallies
+        return self._tallies
 
     def compute_xs(self):
         """Computes the scattering multi-group cross sections using
@@ -1626,7 +1623,7 @@ class NuScatterXS(MGXS):
         """
 
         # Instantiate tallies if they do not exist
-        if super(NuScatterXS, self).tallies is None:
+        if self._tallies is None:
 
             # Create a list of scores for each Tally to be created
             scores = ['flux', 'nu-scatter']
@@ -1639,10 +1636,9 @@ class NuScatterXS(MGXS):
             filters = [[energy_filter], [energy_filter]]
 
             # Initialize the Tallies
-            super(NuScatterXS, self).create_tallies(scores, filters,
-                                                    keys, estimator)
+            self._create_tallies(scores, filters, keys, estimator)
 
-        return super(NuScatterXS, self).tallies
+        return self._tallies
 
     def compute_xs(self):
         """Computes the nu-scattering multi-group cross section using OpenMC
@@ -1689,7 +1685,7 @@ class ScatterMatrixXS(MGXS):
         """
 
         # Instantiate tallies if they do not exist
-        if super(ScatterMatrixXS, self).tallies is None:
+        if self._tallies is None:
 
             group_edges = self.energy_groups.group_edges
             energy = openmc.Filter('energy', group_edges)
@@ -1707,10 +1703,9 @@ class ScatterMatrixXS(MGXS):
             keys = scores
 
             # Initialize the Tallies
-            super(ScatterMatrixXS, self).create_tallies(scores, filters,
-                                                        keys, estimator)
+            self._create_tallies(scores, filters, keys, estimator)
 
-        return super(ScatterMatrixXS, self).tallies
+        return self._tallies
 
     @correction.setter
     def correction(self, correction):
@@ -2000,7 +1995,7 @@ class NuScatterMatrixXS(ScatterMatrixXS):
         """
 
         # Instantiate tallies if they do not exist
-        if super(NuScatterMatrixXS, self).tallies is None:
+        if self._tallies is None:
 
             # Create the non-domain specific Filters for the Tallies
             group_edges = self.energy_groups.group_edges
@@ -2020,10 +2015,9 @@ class NuScatterMatrixXS(ScatterMatrixXS):
                 filters = [[energy], [energy, energyout]]
 
             # Intialize the Tallies
-            super(ScatterMatrixXS, self).create_tallies(scores, filters,
-                                                        keys, estimator)
+            self._create_tallies(scores, filters, keys, estimator)
 
-        return super(ScatterMatrixXS, self).tallies
+        return self._tallies
 
 class Chi(MGXS):
     """The fission spectrum."""
@@ -2044,7 +2038,7 @@ class Chi(MGXS):
         """
 
         # Instantiate tallies if they do not exist
-        if super(Chi, self).tallies is None:
+        if self._tallies is None:
 
             # Create a list of scores for each Tally to be created
             scores = ['nu-fission', 'nu-fission']
@@ -2058,9 +2052,9 @@ class Chi(MGXS):
             filters = [[energyin], [energyout]]
 
             # Intialize the Tallies
-            super(Chi, self).create_tallies(scores, filters, keys, estimator)
+            self._create_tallies(scores, filters, keys, estimator)
 
-        return super(Chi, self).tallies
+        return self._tallies
 
     def compute_xs(self):
         """Computes chi fission spectrum using OpenMC tally arithmetic."""
@@ -2285,10 +2279,11 @@ class Velocity(MGXS):
     def __init__(self, domain=None, domain_type=None,
                  groups=None, by_nuclide=False, name=''):
         super(Velocity, self).__init__(domain, domain_type,
-                                      groups, by_nuclide, name)
+                                       groups, by_nuclide, name)
         self._rxn_type = 'velocity'
 
-    def create_tallies(self):
+    @property
+    def tallies(self):
         """Construct the OpenMC tallies needed to compute this cross section.
 
         This method constructs two tracklength tallies to compute the 'flux'
@@ -2297,155 +2292,71 @@ class Velocity(MGXS):
 
         """
 
-        # Create a list of scores for each Tally to be created
-        scores = ['flux', 'inverse-velocity']
-        estimator = 'tracklength'
-        keys = scores
+        # Instantiate tallies if they do not exist
+        if self._tallies is None:
 
-        # Create the non-domain specific Filters for the Tallies
-        group_edges = self.energy_groups.group_edges
-        energy_filter = openmc.Filter('energy', group_edges)
-        filters = [[energy_filter], [energy_filter]]
+            # Create a list of scores for each Tally to be created
+            scores = ['flux', 'inverse-velocity']
+            estimator = 'tracklength'
+            keys = scores
 
-        # Initialize the Tallies
-        super(Velocity, self).create_tallies(scores, filters, keys, estimator)
+            # Create the non-domain specific Filters for the Tallies
+            group_edges = self.energy_groups.group_edges
+            energy_filter = openmc.Filter('energy', group_edges)
+            filters = [[energy_filter], [energy_filter]]
+
+            # Initialize the Tallies
+            self._create_tallies(scores, filters, keys, estimator)
+
+        return self._tallies
 
     def compute_xs(self):
-        """Computes the multi-group velocity using OpenMC tally arithmetic.
-        """
+        """Computes the multi-group velocity using OpenMC tally arithmetic."""
 
         self._xs_tally = self.tallies['flux'] / self.tallies['inverse-velocity']
         super(Velocity, self).compute_xs()
 
 
 class PromptNeutronLifetime(MGXS):
-    """The multi-group prompt neutron lifetime."""
+    """A Prompt Neutron Lifetime."""
 
     def __init__(self, domain=None, domain_type=None,
                  groups=None, by_nuclide=False, name=''):
         super(PromptNeutronLifetime, self).__init__(domain, domain_type,
                                                     groups, by_nuclide, name)
-        self._rxn_type = 'prompt-neutron-lifetime'
+        self._rxn_type = 'prompt neutron lifetime'
 
-    def create_tallies(self):
+    @property
+    def tallies(self):
         """Construct the OpenMC tallies needed to compute this cross section.
 
-        This method constructs two tracklength tallies to compute the 'nu-fission'
-        and 'inverse-velocity' reaction rates in the spatial domain and energy
-        groups of interest.
-
+        This method constructs two tracklength tallies to compute the
+        'nu-fission' and 'inverse-velocity' reaction rates in the spatial domain
+        of interest.
         """
 
-        # Create a list of scores for each Tally to be created
-        scores = ['nu-fission', 'inverse-velocity']
-        estimator = 'tracklength'
-        keys = scores
+        # Instantiate tallies if they do not exist
+        if self._tallies is None:
 
-        # Create the non-domain specific Filters for the Tallies
-        group_edges = self.energy_groups.group_edges
-        energy_filter = openmc.Filter('energy', group_edges)
-        filters = [[energy_filter], [energy_filter]]
+            # Create a list of scores for each Tally to be created
+            scores = ['nu-fission', 'inverse-velocity']
+            estimator = 'tracklength'
+            keys = scores
 
-        # Initialize the Tallies
-        super(PromptNeutronLifetime, self).create_tallies(scores, filters, keys,
-                                                          estimator)
+            # Create the non-domain specific Filters for the Tallies
+            group_edges = self.energy_groups.group_edges
+            energy_filter = openmc.Filter('energy', group_edges)
+            filters = [[energy_filter], [energy_filter]]
+
+            # Initialize the Tallies
+            self._create_tallies(scores, filters, keys, estimator)
+
+        return self._tallies
 
     def compute_xs(self):
-        """Computes the multi-group prompt neutron lifetime using OpenMC tally
-        arithmetic.
-        """
+        """Computes the prompt neutron lifetime using OpenMC tally arithmetic."""
 
-        self._xs_tally = self.tallies['inverse-velocity'] / 100.0 \
-                         / self.tallies['nu-fission']
+        self._xs_tally = self.tallies['inverse-velocity'] \
+                         / self.tallies['nu-fission'] / 100.0
         super(PromptNeutronLifetime, self).compute_xs()
 
-    def print_xs(self, subdomains='all', nuclides='all', xs_type='macro'):
-        """Print a string representation for the multi-group cross section.
-
-        Parameters
-        ----------
-        subdomains : Iterable of Integral or 'all'
-            The subdomain IDs of the cross sections to include in the report.
-            Defaults to 'all'.
-        nuclides : Iterable of str or 'all' or 'sum'
-            The nuclides of the cross-sections to include in the report. This
-            may be a list of nuclide name strings (e.g., ['U-235', 'U-238']).
-            The special string 'all' will report the cross sections for all
-            nuclides in the spatial domain. The special string 'sum' will report
-            the cross sections summed over all nuclides. Defaults to 'all'.
-        xs_type: {'macro', 'micro'}
-            Return the macro or micro cross section in units of cm^-1 or barns.
-            Defaults to 'macro'.
-
-        """
-
-        # Construct a collection of the subdomains to report
-        if subdomains != 'all':
-            cv.check_iterable_type('subdomains', subdomains, Integral)
-        elif self.domain_type == 'distribcell':
-            subdomains = np.arange(self.num_subdomains, dtype=np.int)
-        else:
-            subdomains = [self.domain.id]
-
-        # Construct a collection of the nuclides to report
-        if self.by_nuclide:
-            if nuclides == 'all':
-                nuclides = self.get_all_nuclides()
-            elif nuclides == 'sum':
-                nuclides = ['sum']
-            else:
-                cv.check_iterable_type('nuclides', nuclides, basestring)
-        else:
-            nuclides = ['sum']
-
-        cv.check_value('xs_type', xs_type, ['macro', 'micro'])
-
-        # Build header for string with type and domain info
-        string = 'Multi-Group XS\n'
-        string += '{0: <16}=\t{1}\n'.format('\tReaction Type', self.rxn_type)
-        string += '{0: <16}=\t{1}\n'.format('\tDomain Type', self.domain_type)
-        string += '{0: <16}=\t{1}\n'.format('\tDomain ID', self.domain.id)
-
-        # If cross section data has not been computed, only print string header
-        if self.xs_tally is None:
-            print(string)
-            return
-
-        # Loop over all subdomains
-        for subdomain in subdomains:
-
-            if self.domain_type == 'distribcell':
-                string += '{0: <16}=\t{1}\n'.format('\tSubdomain', subdomain)
-
-            # Loop over all Nuclides
-            for nuclide in nuclides:
-
-                # Build header for nuclide type
-                if nuclide != 'sum':
-                    string += '{0: <16}=\t{1}\n'.format('\tNuclide', nuclide)
-
-                # Build header for cross section type
-                if xs_type == 'macro':
-                    string += '{0: <16}\n'.format('\tCross Sections [seconds]:')
-                else:
-                    msg = 'Unable to print the micro prompt neutron lifetime'
-                    raise ValueError(msg)
-
-                template = '{0: <12}Group {1} [{2: <10} - {3: <10}MeV]:\t'
-
-                # Loop over energy groups ranges
-                for group in range(1, self.num_groups+1):
-                    bounds = self.energy_groups.get_group_bounds(group)
-                    string += template.format('', group, bounds[0], bounds[1])
-                    average = self.get_xs([group], [subdomain], [nuclide],
-                                          xs_type=xs_type, value='mean')
-                    rel_err = self.get_xs([group], [subdomain], [nuclide],
-                                          xs_type=xs_type, value='rel_err')
-                    average = average.flatten()[0]
-                    rel_err = rel_err.flatten()[0] * 100.
-                    string += '{:.2e} +/- {:1.2e}%'.format(average, rel_err)
-                    string += '\n'
-                string += '\n'
-            string += '\n'
-
-        print(string)
