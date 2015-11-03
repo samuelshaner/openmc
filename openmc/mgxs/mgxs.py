@@ -29,7 +29,9 @@ MGXS_TYPES = ['total',
               'nu-scatter',
               'scatter matrix',
               'nu-scatter matrix',
-              'chi']
+              'chi',
+              'velocity',
+              'prompt neutron lifetime']
 
 
 # Supported domain types
@@ -307,6 +309,10 @@ class MGXS(object):
             mgxs = NuScatterMatrixXS(domain, domain_type, energy_groups)
         elif mgxs_type == 'chi':
             mgxs = Chi(domain, domain_type, energy_groups)
+        elif mgxs_type == 'velocity':
+            mgxs = Velocity(domain, domain_type, energy_groups)
+        elif mgxs_type == 'prompt neutron lifetime':
+            mgxs = PromptNeutronLifetime(domain, domain_type, energy_groups)
 
         mgxs.by_nuclide = by_nuclide
         mgxs.name = name
@@ -2265,3 +2271,91 @@ class Chi(MGXS):
             df['std. dev.'] *= np.tile(densities, tile_factor)
 
         return df
+
+
+class Velocity(MGXS):
+    """A multi-group velocity."""
+
+    def __init__(self, domain=None, domain_type=None,
+                 groups=None, by_nuclide=False, name=''):
+        super(Velocity, self).__init__(domain, domain_type,
+                                       groups, by_nuclide, name)
+        self._rxn_type = 'velocity'
+
+    @property
+    def tallies(self):
+        """Construct the OpenMC tallies needed to compute this cross section.
+
+        This method constructs two tracklength tallies to compute the 'flux'
+        and 'inverse-velocity' reaction rates in the spatial domain and energy
+        groups of interest.
+
+        """
+
+        # Instantiate tallies if they do not exist
+        if self._tallies is None:
+
+            # Create a list of scores for each Tally to be created
+            scores = ['flux', 'inverse-velocity']
+            estimator = 'tracklength'
+            keys = scores
+
+            # Create the non-domain specific Filters for the Tallies
+            group_edges = self.energy_groups.group_edges
+            energy_filter = openmc.Filter('energy', group_edges)
+            filters = [[energy_filter], [energy_filter]]
+
+            # Initialize the Tallies
+            self._create_tallies(scores, filters, keys, estimator)
+
+        return self._tallies
+
+    def compute_xs(self):
+        """Computes the multi-group velocity using OpenMC tally arithmetic."""
+
+        self._xs_tally = self.tallies['flux'] / self.tallies['inverse-velocity']
+        super(Velocity, self).compute_xs()
+
+
+class PromptNeutronLifetime(MGXS):
+    """A Prompt Neutron Lifetime."""
+
+    def __init__(self, domain=None, domain_type=None,
+                 groups=None, by_nuclide=False, name=''):
+        super(PromptNeutronLifetime, self).__init__(domain, domain_type,
+                                                    groups, by_nuclide, name)
+        self._rxn_type = 'prompt neutron lifetime'
+
+    @property
+    def tallies(self):
+        """Construct the OpenMC tallies needed to compute this cross section.
+
+        This method constructs two tracklength tallies to compute the
+        'nu-fission' and 'inverse-velocity' reaction rates in the spatial domain
+        of interest.
+        """
+
+        # Instantiate tallies if they do not exist
+        if self._tallies is None:
+
+            # Create a list of scores for each Tally to be created
+            scores = ['nu-fission', 'inverse-velocity']
+            estimator = 'tracklength'
+            keys = scores
+
+            # Create the non-domain specific Filters for the Tallies
+            group_edges = self.energy_groups.group_edges
+            energy_filter = openmc.Filter('energy', group_edges)
+            filters = [[energy_filter], [energy_filter]]
+
+            # Initialize the Tallies
+            self._create_tallies(scores, filters, keys, estimator)
+
+        return self._tallies
+
+    def compute_xs(self):
+        """Computes the prompt neutron lifetime using OpenMC tally arithmetic."""
+
+        self._xs_tally = self.tallies['inverse-velocity'] \
+                         / self.tallies['nu-fission'] / 100.0
+        super(PromptNeutronLifetime, self).compute_xs()
