@@ -47,9 +47,14 @@ module particle_header
     integer          :: n_coord          ! number of current coordinates
     type(LocalCoord) :: coord(MAX_COORD) ! coordinates for all levels
 
+    ! Energy Data
+    real(8)    :: E      ! post-collision energy
+    real(8)    :: last_E ! pre-collision energy
+    integer    :: g      ! post-collision energy group (MG only)
+    integer    :: last_g ! pre-collision energy group (MG only)
+
     ! Other physical data
     real(8)    :: wgt           ! particle weight
-    real(8)    :: E             ! energy
     real(8)    :: mu            ! angle of scatter
     logical    :: alive         ! is particle alive?
 
@@ -57,7 +62,6 @@ module particle_header
     real(8)    :: last_xyz(3)   ! previous coordinates
     real(8)    :: last_uvw(3)   ! previous direction coordinates
     real(8)    :: last_wgt      ! pre-collision particle weight
-    real(8)    :: last_E        ! pre-collision energy
     real(8)    :: absorb_wgt    ! weight absorbed for survival biasing
 
     ! What event last took place
@@ -90,10 +94,10 @@ module particle_header
     type(Bank) :: secondary_bank(MAX_SECONDARY)
 
   contains
-    procedure :: initialize => initialize_particle
-    procedure :: clear => clear_particle
-    procedure :: initialize_from_source
-    procedure :: create_secondary
+    procedure, pass :: initialize => initialize_particle
+    procedure, pass :: clear => clear_particle
+    procedure, pass :: initialize_from_source => initialize_from_source
+    procedure, pass :: create_secondary => create_secondary
   end type Particle
 
 contains
@@ -128,6 +132,8 @@ contains
     this % fission           = .false.
     this % delayed_group     = 0
     this % n_delayed_bank(:) = 0
+    ! Initialize this % g so there is always at least some initialized value
+    this % g = 1
 
     ! Set up base level coordinates
     this % coord(1) % universe = BASE_UNIVERSE
@@ -174,9 +180,10 @@ contains
 ! fission, or simply as a secondary particle.
 !===============================================================================
 
-  subroutine initialize_from_source(this, src)
+  subroutine initialize_from_source(this, src, run_CE)
     class(Particle), intent(inout) :: this
     type(Bank),      intent(in)    :: src
+    logical,         intent(in)    :: run_CE
 
     ! set defaults
     call this % initialize()
@@ -190,6 +197,10 @@ contains
     this % last_uvw       = src % uvw
     this % E              = src % E
     this % last_E         = src % E
+    if (.not. run_CE) then
+      this % g            = src % g
+      this % last_g       = src % g
+    end if
 
   end subroutine initialize_from_source
 
@@ -198,10 +209,11 @@ contains
 ! the secondary bank and increments the number of sites in the secondary bank.
 !===============================================================================
 
-  subroutine create_secondary(this, uvw, type)
+  subroutine create_secondary(this, uvw, type, run_CE)
     class(Particle), intent(inout) :: this
     real(8),         intent(in)    :: uvw(3)
     integer,         intent(in)    :: type
+    logical,         intent(in)    :: run_CE
 
     integer :: n
 
@@ -215,8 +227,11 @@ contains
     this % secondary_bank(n) % wgt    = this % wgt
     this % secondary_bank(n) % xyz(:) = this % coord(1) % xyz
     this % secondary_bank(n) % uvw(:) = uvw
-    this % secondary_bank(n) % E      = this % E
     this % n_secondary = n
+    this % secondary_bank(this % n_secondary) % E = this % E
+    if (.not. run_CE) then
+      this % secondary_bank(this % n_secondary) % g = this % g
+    end if
 
   end subroutine create_secondary
 

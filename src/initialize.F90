@@ -1,6 +1,6 @@
 module initialize
 
-  use ace,              only: read_xs, same_nuclide_list
+  use ace,              only: read_ace_xs, same_nuclide_list
   use bank_header,      only: Bank
   use constants
   use dict_header,      only: DictIntInt, ElemKeyValueII
@@ -14,17 +14,19 @@ module initialize
   use global
   use hdf5_interface,   only: file_open, read_dataset, file_close, hdf5_bank_t,&
                               hdf5_tallyresult_t, hdf5_integer8_t
-  use input_xml,        only: read_input_xml, read_cross_sections_xml,         &
-                              cells_in_univ_dict, read_plots_xml
+  use input_xml,        only: read_input_xml, cells_in_univ_dict, read_plots_xml
   use material_header,  only: Material
+  use mgxs_data
   use output,           only: title, header, print_version, write_message,     &
                               print_usage, write_xs_summary, print_plot
   use random_lcg,       only: initialize_prng
   use state_point,      only: load_state_point
-  use string,           only: to_str, str_to_int, starts_with, ends_with
+  use simple_string,    only: to_str, starts_with, ends_with
+  use string,           only: str_to_int
   use summary,          only: write_summary
   use tally_header,     only: TallyObject, TallyResult, TallyFilter
   use tally_initialize, only: configure_tallies
+  use tally,            only: init_tally_routines
 
 #ifdef MPI
   use message_passing
@@ -114,26 +116,43 @@ contains
 
       ! Read ACE-format cross sections
       call time_read_xs%start()
-      call read_xs()
+      if (run_CE) then
+        call read_ace_xs()
+      else
+        call read_mgxs()
+      end if
       call time_read_xs%stop()
 
       ! Create linked lists for multiple instances of the same nuclide
-      call same_nuclide_list()
+      if (run_CE) then
+        call same_nuclide_list()
+      else
+        call same_nuclide_mg_list()
+      end if
 
-      ! Construct unionized or log energy grid for cross-sections
-      select case (grid_method)
-      case (GRID_NUCLIDE)
-        continue
-      case (GRID_MAT_UNION)
-        call time_unionize%start()
-        call unionized_grid()
-        call time_unionize%stop()
-      case (GRID_LOGARITHM)
-        call logarithmic_grid()
-      end select
+      ! Construct information needed for nuclear data
+      if (run_CE) then
+        ! Construct unionized or log energy grid for cross-sections
+        select case (grid_method)
+        case (GRID_NUCLIDE)
+          continue
+        case (GRID_MAT_UNION)
+          call time_unionize%start()
+          call unionized_grid()
+          call time_unionize%stop()
+        case (GRID_LOGARITHM)
+          call logarithmic_grid()
+        end select
+      else
+        ! Create material macroscopic data for MGXS
+        call create_macro_xs()
+      end if
 
       ! Allocate and setup tally stride, matching_bins, and tally maps
       call configure_tallies()
+
+      ! Set up tally procedure pointers
+      call init_tally_routines()
 
       ! Determine how much work each processor should do
       call calculate_work()
@@ -183,17 +202,17 @@ contains
 
   subroutine initialize_mpi()
 
-    integer                   :: bank_blocks(5)   ! Count for each datatype
+    integer                   :: bank_blocks(6)   ! Count for each datatype
 #ifdef MPIF08
-    type(MPI_Datatype)        :: bank_types(5)
+    type(MPI_Datatype)        :: bank_types(6)
     type(MPI_Datatype)        :: result_types(1)
     type(MPI_Datatype)        :: temp_type
 #else
-    integer                   :: bank_types(5)    ! Datatypes
+    integer                   :: bank_types(6)    ! Datatypes
     integer                   :: result_types(1)  ! Datatypes
     integer                   :: temp_type        ! temporary derived type
 #endif
-    integer(MPI_ADDRESS_KIND) :: bank_disp(5)     ! Displacements
+    integer(MPI_ADDRESS_KIND) :: bank_disp(6)     ! Displacements
     integer                   :: result_blocks(1) ! Count for each datatype
     integer(MPI_ADDRESS_KIND) :: result_disp(1)   ! Displacements
     integer(MPI_ADDRESS_KIND) :: result_base_disp ! Base displacement
@@ -227,15 +246,17 @@ contains
     call MPI_GET_ADDRESS(b % xyz,           bank_disp(2), mpi_err)
     call MPI_GET_ADDRESS(b % uvw,           bank_disp(3), mpi_err)
     call MPI_GET_ADDRESS(b % E,             bank_disp(4), mpi_err)
-    call MPI_GET_ADDRESS(b % delayed_group, bank_disp(5), mpi_err)
+    call MPI_GET_ADDRESS(b % g,             bank_disp(5), mpi_err)
+    call MPI_GET_ADDRESS(b % delayed_group, bank_disp(6), mpi_err)
 
     ! Adjust displacements
     bank_disp = bank_disp - bank_disp(1)
 
     ! Define MPI_BANK for fission sites
-    bank_blocks = (/ 1, 3, 3, 1, 1 /)
-    bank_types = (/ MPI_REAL8, MPI_REAL8, MPI_REAL8, MPI_REAL8, MPI_INTEGER /)
-    call MPI_TYPE_CREATE_STRUCT(5, bank_blocks, bank_disp, &
+    bank_blocks = (/ 1, 3, 3, 1, 1, 1 /)
+    bank_types = (/ MPI_REAL8, MPI_REAL8, MPI_REAL8, MPI_REAL8, &
+         MPI_INTEGER, MPI_INTEGER /)
+    call MPI_TYPE_CREATE_STRUCT(6, bank_blocks, bank_disp, &
          bank_types, MPI_BANK, mpi_err)
     call MPI_TYPE_COMMIT(MPI_BANK, mpi_err)
 
@@ -307,6 +328,8 @@ contains
          c_loc(tmpb(1)%uvw)), coordinates_t, hdf5_err)
     call h5tinsert_f(hdf5_bank_t, "E", h5offsetof(c_loc(tmpb(1)), &
          c_loc(tmpb(1)%E)), H5T_NATIVE_DOUBLE, hdf5_err)
+    call h5tinsert_f(hdf5_bank_t, "g", h5offsetof(c_loc(tmpb(1)), &
+         c_loc(tmpb(1)%g)), H5T_NATIVE_INTEGER, hdf5_err)
     call h5tinsert_f(hdf5_bank_t, "delayed_group", h5offsetof(c_loc(tmpb(1)), &
          c_loc(tmpb(1)%delayed_group)), H5T_NATIVE_INTEGER, hdf5_err)
 

@@ -1,7 +1,6 @@
 module ace
 
-  use ace_header,       only: Nuclide, Reaction, SAlphaBeta, XsListing, &
-                              DistEnergy
+  use ace_header,       only: Reaction, DistEnergy
   use constants
   use endf,             only: reaction_name, is_fission, is_disappearance
   use error,            only: fatal_error, warning
@@ -9,9 +8,11 @@ module ace
   use global
   use list_header,      only: ListInt
   use material_header,  only: Material
+  use nuclide_header
   use output,           only: write_message
+  use sab_header,       only: SAlphaBeta
   use set_header,       only: SetChar
-  use string,           only: to_str, to_lower
+  use simple_string,    only: to_str, to_lower
 
   implicit none
 
@@ -27,11 +28,11 @@ module ace
 contains
 
 !===============================================================================
-! READ_XS reads all the cross sections for the problem and stores them in
+! READ_ACE_XS reads all the cross sections for the problem and stores them in
 ! nuclides and sab_tables arrays
 !===============================================================================
 
-  subroutine read_xs()
+  subroutine read_ace_xs()
 
     integer :: i            ! index in materials array
     integer :: j            ! index over nuclides in material
@@ -46,7 +47,7 @@ contains
     character(12)  :: name  ! name of isotope, e.g. 92235.03c
     character(12)  :: alias ! alias of nuclide, e.g. U-235.03c
     type(Material),   pointer :: mat
-    type(Nuclide),    pointer :: nuc
+    type(Nuclide_CE), pointer :: nuc
     type(SAlphaBeta), pointer :: sab
     type(SetChar) :: already_read
 
@@ -225,7 +226,7 @@ contains
       end if
     end do
 
-  end subroutine read_xs
+  end subroutine read_ace_xs
 
 !===============================================================================
 ! READ_ACE_TABLE reads a single cross section table in either ASCII or binary
@@ -257,9 +258,9 @@ contains
     character(10) :: mat           ! material identifier
     character(70) :: comment       ! comment for ACE table
     character(MAX_FILE_LEN) :: filename ! path to ACE cross section library
-    type(Nuclide),   pointer :: nuc
+    type(Nuclide_CE), pointer :: nuc
     type(SAlphaBeta), pointer :: sab
-    type(XsListing), pointer :: listing
+    type(XsListing),  pointer :: listing
 
     ! determine path, record length, and location of table
     listing => xs_listings(i_listing)
@@ -414,8 +415,8 @@ contains
 !===============================================================================
 
   subroutine read_esz(nuc, data_0K)
-    type(Nuclide), intent(inout) :: nuc
-    logical, intent(in) :: data_0K ! are we reading 0K data?
+    type(Nuclide_CE), intent(inout) :: nuc
+    logical,          intent(in)    :: data_0K ! are we reading 0K data?
 
     integer :: NE ! number of energy points for total and elastic cross sections
     integer :: i  ! index in 0K elastic xs array for this nuclide
@@ -502,7 +503,7 @@ contains
 !===============================================================================
 
   subroutine read_nu_data(nuc)
-    type(Nuclide), intent(inout) :: nuc
+    type(Nuclide_CE), intent(inout) :: nuc
 
     integer :: i      ! loop index
     integer :: JXS2   ! location for fission nu data
@@ -701,7 +702,7 @@ contains
 !===============================================================================
 
   subroutine read_reactions(nuc)
-    type(Nuclide), intent(inout) :: nuc
+    type(Nuclide_CE), intent(inout) :: nuc
 
     integer :: i         ! loop indices
     integer :: i_fission ! index in nuc % index_fission
@@ -885,7 +886,7 @@ contains
 !===============================================================================
 
   subroutine read_angular_dist(nuc)
-    type(Nuclide), intent(inout) :: nuc
+    type(Nuclide_CE), intent(inout) :: nuc
 
     integer :: JXS8   ! location of angular distribution locators
     integer :: JXS9   ! location of angular distributions
@@ -979,7 +980,7 @@ contains
 !===============================================================================
 
   subroutine read_energy_dist(nuc)
-    type(Nuclide), intent(inout) :: nuc
+    type(Nuclide_CE), intent(inout) :: nuc
 
     integer :: LED   ! location of energy distribution locators
     integer :: LOCC  ! location of energy distributions for given MT
@@ -1292,7 +1293,7 @@ contains
 !===============================================================================
 
   subroutine read_unr_res(nuc)
-    type(Nuclide), intent(inout) :: nuc
+    type(Nuclide_CE), intent(inout) :: nuc
 
     integer :: JXS23 ! location of URR data
     integer :: lc    ! locator
@@ -1380,7 +1381,7 @@ contains
 !===============================================================================
 
   subroutine generate_nu_fission(nuc)
-    type(Nuclide), intent(inout) :: nuc
+    type(Nuclide_CE), intent(inout) :: nuc
 
     integer :: i  ! index on nuclide energy grid
     real(8) :: E  ! energy

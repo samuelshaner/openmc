@@ -7,12 +7,13 @@ module source
   use geometry_header,  only: BASE_UNIVERSE
   use global
   use hdf5_interface,   only: file_create, file_open, file_close, read_dataset
-  use math,             only: maxwell_spectrum, watt_spectrum
   use output,           only: write_message
   use particle_header,  only: Particle
   use random_lcg,       only: prn, set_particle_seed, prn_set_stream
+  use search,           only: binary_search
+  use simple_string,    only: to_str
+  use spectra
   use state_point,      only: read_source_bank, write_source_bank
-  use string,           only: to_str
 
 #ifdef MPI
   use message_passing
@@ -239,6 +240,17 @@ contains
     case default
       call fatal_error("No energy distribution specified for external source!")
     end select
+
+    ! If running in MG, convert site%E to group
+    if (.not. run_CE) then
+      if (site%E <= energy_bins(1)) then
+        site%g = 1
+      else if (site%E > energy_bins(energy_groups + 1)) then
+        site%g = energy_groups
+      else
+        site%g = binary_search(energy_bins, energy_groups + 1, site%E)
+      end if
+    end if
 
     ! Set the random number generator back to the tracking stream.
     call prn_set_stream(STREAM_TRACKING)

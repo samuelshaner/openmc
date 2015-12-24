@@ -1,6 +1,6 @@
 module physics
 
-  use ace_header,             only: Nuclide, Reaction, DistEnergy
+  use ace_header,             only: Reaction, DistEnergy
   use constants
   use cross_section,          only: elastic_xs_0K
   use endf,                   only: reaction_name
@@ -9,14 +9,16 @@ module physics
   use global
   use interpolation,          only: interpolate_tab1
   use material_header,        only: Material
-  use math,                   only: maxwell_spectrum, watt_spectrum
   use mesh,                   only: get_mesh_indices
+  use nuclide_header
   use output,                 only: write_message
   use particle_header,        only: Particle
   use particle_restart_write, only: write_particle_restart
+  use physics_common
   use random_lcg,             only: prn
   use search,                 only: binary_search
-  use string,                 only: to_str
+  use simple_string,          only: to_str
+  use spectra
 
   implicit none
 
@@ -75,7 +77,7 @@ contains
     integer :: i_nuclide    ! index in nuclides array
     integer :: i_nuc_mat    ! index in material's nuclides array
     integer :: i_reaction   ! index in nuc % reactions array
-    type(Nuclide), pointer :: nuc
+    type(Nuclide_CE), pointer :: nuc
 
     call sample_nuclide(p, 'total  ', i_nuclide, i_nuc_mat)
 
@@ -193,7 +195,7 @@ contains
     real(8) :: f
     real(8) :: prob
     real(8) :: cutoff
-    type(Nuclide),  pointer :: nuc
+    type(Nuclide_CE),  pointer :: nuc
 
     ! Get pointer to nuclide
     nuc => nuclides(i_nuclide)
@@ -239,7 +241,6 @@ contains
 !===============================================================================
 
   subroutine absorption(p, i_nuclide)
-
     type(Particle), intent(inout) :: p
     integer,        intent(in)    :: i_nuclide
 
@@ -276,32 +277,10 @@ contains
   end subroutine absorption
 
 !===============================================================================
-! RUSSIAN_ROULETTE
-!===============================================================================
-
-  subroutine russian_roulette(p)
-
-    type(Particle), intent(inout) :: p
-
-    if (p % wgt < weight_cutoff) then
-      if (prn() < p % wgt / weight_survive) then
-        p % wgt = weight_survive
-        p % last_wgt = p % wgt
-      else
-        p % wgt = ZERO
-        p % last_wgt = ZERO
-        p % alive = .false.
-      end if
-    end if
-
-  end subroutine russian_roulette
-
-!===============================================================================
 ! SCATTER
 !===============================================================================
 
   subroutine scatter(p, i_nuclide, i_nuc_mat)
-
     type(Particle), intent(inout) :: p
     integer,        intent(in)    :: i_nuclide
     integer,        intent(in)    :: i_nuc_mat
@@ -314,7 +293,7 @@ contains
     real(8) :: uvw_new(3) ! outgoing uvw for iso-in-lab scattering
     real(8) :: uvw_old(3) ! incoming uvw for iso-in-lab scattering
     real(8) :: phi        ! azimuthal angle for iso-in-lab scattering
-    type(Nuclide),  pointer :: nuc
+    type(Nuclide_CE),  pointer :: nuc
 
     ! copy incoming direction
     uvw_old(:) = p % coord(1) % uvw
@@ -429,7 +408,7 @@ contains
     real(8) :: v_cm(3)   ! velocity of center-of-mass
     real(8) :: v_t(3)    ! velocity of target nucleus
     real(8) :: uvw_cm(3) ! directional cosines in center-of-mass
-    type(Nuclide), pointer :: nuc
+    type(Nuclide_CE), pointer :: nuc
 
     ! get pointer to nuclide
     nuc => nuclides(i_nuclide)
@@ -495,7 +474,6 @@ contains
 !===============================================================================
 
   subroutine sab_scatter(i_nuclide, i_sab, E, uvw, mu)
-
     integer, intent(in)     :: i_nuclide ! index in micro_xs
     integer, intent(in)     :: i_sab     ! index in sab_tables
     real(8), intent(inout)  :: E         ! incoming/outgoing energy
@@ -753,7 +731,7 @@ contains
 !===============================================================================
 
   subroutine sample_target_velocity(nuc, v_target, E, uvw, v_neut, wgt, xs_eff)
-    type(Nuclide), intent(in) :: nuc ! target nuclide at temperature T
+    type(Nuclide_CE), intent(in) :: nuc ! target nuclide at temperature T
     real(8), intent(out)   :: v_target(3) ! target velocity
     real(8), intent(in)    :: v_neut(3)   ! neutron velocity
     real(8), intent(in)    :: E           ! particle energy
@@ -998,10 +976,10 @@ contains
 !===============================================================================
 
   subroutine sample_cxs_target_velocity(nuc, v_target, E, uvw)
-    type(Nuclide), intent(in) :: nuc ! target nuclide at temperature
-    real(8), intent(out)    :: v_target(3)
-    real(8), intent(in)     :: E
-    real(8), intent(in)     :: uvw(3)
+    type(Nuclide_CE), intent(in) :: nuc ! target nuclide at temperature
+    real(8), intent(out)         :: v_target(3)
+    real(8), intent(in)          :: E
+    real(8), intent(in)          :: uvw(3)
 
     real(8) :: kT          ! equilibrium temperature of target in MeV
     real(8) :: awr         ! target/neutron mass ratio
@@ -1084,7 +1062,7 @@ contains
     real(8) :: phi                      ! fission neutron azimuthal angle
     real(8) :: weight                   ! weight adjustment for ufs method
     logical :: in_mesh                  ! source site in ufs mesh?
-    type(Nuclide),  pointer :: nuc
+    type(Nuclide_CE),  pointer :: nuc
 
     ! Get pointers
     nuc => nuclides(i_nuclide)
@@ -1186,8 +1164,8 @@ contains
 
   function sample_fission_energy(nuc, rxn, p) result(E_out)
 
-    type(Nuclide),  intent(in) :: nuc
-    type(Reaction), intent(in) :: rxn
+    type(Nuclide_CE), intent(in) :: nuc
+    type(Reaction),   intent(in) :: rxn
     type(Particle), intent(inout) :: p     ! Particle causing fission
     real(8)                       :: E_out ! outgoing energy of fission neutron
 
@@ -1312,9 +1290,9 @@ contains
 !===============================================================================
 
   subroutine inelastic_scatter(nuc, rxn, p)
-    type(Nuclide),  intent(in)    :: nuc
-    type(Reaction), intent(in)    :: rxn
-    type(Particle), intent(inout) :: p
+    type(Nuclide_CE), intent(in)    :: nuc
+    type(Reaction),   intent(in)    :: rxn
+    type(Particle),   intent(inout) :: p
 
     integer :: i      ! loop index
     integer :: law    ! secondary energy distribution law
@@ -1385,7 +1363,7 @@ contains
       p % wgt = yield * p % wgt
     else
       do i = 1, rxn % multiplicity - 1
-        call p % create_secondary(p % coord(1) % uvw, NEUTRON)
+        call p % create_secondary(p % coord(1) % uvw, NEUTRON, run_CE)
       end do
     end if
 
@@ -1517,54 +1495,7 @@ contains
 
   end function sample_angle
 
-!===============================================================================
-! ROTATE_ANGLE rotates direction cosines through a polar angle whose cosine is
-! mu and through an azimuthal angle sampled uniformly. Note that this is done
-! with direct sampling rather than rejection as is done in MCNP and SERPENT.
-!===============================================================================
 
-  function rotate_angle(uvw0, mu) result(uvw)
-    real(8), intent(in) :: uvw0(3) ! directional cosine
-    real(8), intent(in) :: mu      ! cosine of angle in lab or CM
-    real(8)             :: uvw(3)  ! rotated directional cosine
-
-    real(8) :: phi    ! azimuthal angle
-    real(8) :: sinphi ! sine of azimuthal angle
-    real(8) :: cosphi ! cosine of azimuthal angle
-    real(8) :: a      ! sqrt(1 - mu^2)
-    real(8) :: b      ! sqrt(1 - w^2)
-    real(8) :: u0     ! original cosine in x direction
-    real(8) :: v0     ! original cosine in y direction
-    real(8) :: w0     ! original cosine in z direction
-
-    ! Copy original directional cosines
-    u0 = uvw0(1)
-    v0 = uvw0(2)
-    w0 = uvw0(3)
-
-    ! Sample azimuthal angle in [0,2pi)
-    phi = TWO * PI * prn()
-
-    ! Precompute factors to save flops
-    sinphi = sin(phi)
-    cosphi = cos(phi)
-    a = sqrt(max(ZERO, ONE - mu*mu))
-    b = sqrt(max(ZERO, ONE - w0*w0))
-
-    ! Need to treat special case where sqrt(1 - w**2) is close to zero by
-    ! expanding about the v component rather than the w component
-    if (b > 1e-10) then
-      uvw(1) = mu*u0 + a*(u0*w0*cosphi - v0*sinphi)/b
-      uvw(2) = mu*v0 + a*(v0*w0*cosphi + u0*sinphi)/b
-      uvw(3) = mu*w0 - a*b*cosphi
-    else
-      b = sqrt(ONE - v0*v0)
-      uvw(1) = mu*u0 + a*(u0*v0*cosphi + w0*sinphi)/b
-      uvw(2) = mu*v0 - a*b*cosphi
-      uvw(3) = mu*w0 + a*(v0*w0*cosphi - u0*sinphi)/b
-    end if
-
-  end function rotate_angle
 
 !===============================================================================
 ! SAMPLE_ENERGY samples an outgoing energy distribution, either for a secondary
