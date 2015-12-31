@@ -1,6 +1,5 @@
 import openmc
-import openmc.mgxs
-import numpy as np
+from lattices import lattices, universes, cells
 
 ###############################################################################
 #                      Simulation Input File Parameters
@@ -29,7 +28,67 @@ materials_file.export_to_xml()
 #                 Exporting to OpenMC geometry.xml File
 ###############################################################################
 
-from geometry_3d import geometry
+# Instantiate Core boundaries
+core_x_min = openmc.XPlane(surface_id=2, x0=-32.13, name='Core x-min')
+core_y_min = openmc.YPlane(surface_id=3, y0=-32.13, name='Core y-min')
+core_z_min = openmc.ZPlane(surface_id=4, z0= 0.0  , name='Core z-min')
+core_x_max = openmc.XPlane(surface_id=5, x0= 32.13, name='Core x-max')
+core_y_max = openmc.YPlane(surface_id=6, y0= 32.13, name='Core y-max')
+core_z_max = openmc.ZPlane(surface_id=7, z0=214.20, name='Core z-max')
+
+core_x_min.boundary_type = 'reflective'
+core_y_min.boundary_type = 'vacuum'
+core_z_min.boundary_type = 'reflective'
+core_x_max.boundary_type = 'vacuum'
+core_y_max.boundary_type = 'reflective'
+core_z_max.boundary_type = 'vacuum'
+
+cells['Core'].region = +core_x_min & +core_y_min & +core_z_min & -core_x_max & -core_y_max & -core_z_max
+
+lattices['Core'] = openmc.RectLattice(lattice_id=201, name='3x3 core lattice')
+lattices['Core'].dimension = [3,3,10]
+lattices['Core'].lower_left = [-32.13, -32.13, 0.0]
+lattices['Core'].pitch = [21.42, 21.42, 21.42]
+w = universes['Reflector Unrodded Assembly']
+u = universes['UO2 Unrodded Assembly']
+m = universes['MOX Unrodded Assembly']
+lattices['Core'].universes = [[[u, m, w],
+                               [m, u, w],
+                               [w, w, w]],
+                              [[u, m, w],
+                               [m, u, w],
+                               [w, w, w]],
+                              [[u, m, w],
+                               [m, u, w],
+                               [w, w, w]],
+                              [[u, m, w],
+                               [m, u, w],
+                               [w, w, w]],
+                              [[u, m, w],
+                               [m, u, w],
+                               [w, w, w]],
+                              [[u, m, w],
+                               [m, u, w],
+                               [w, w, w]],
+                              [[u, m, w],
+                               [m, u, w],
+                               [w, w, w]],
+                              [[u, m, w],
+                               [m, u, w],
+                               [w, w, w]],
+                              [[u, m, w],
+                               [m, u, w],
+                               [w, w, w]],
+                              [[w, w, w],
+                               [w, w, w],
+                               [w, w, w]]]
+
+# Add Core lattice to Core cell
+cells['Core'].fill = lattices['Core']
+
+# Instantiate a Geometry and register the root Universe
+geometry = openmc.Geometry()
+geometry.root_universe = universes['Root']
 
 # Instantiate a GeometryFile, register Geometry, and export to XML
 geometry_file = openmc.GeometryFile()
