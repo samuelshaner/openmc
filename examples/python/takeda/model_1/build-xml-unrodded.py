@@ -96,35 +96,3 @@ plot_file.add_plot(plot_1)
 plot_file.add_plot(plot_2)
 plot_file.add_plot(plot_3)
 plot_file.export_to_xml()
-
-
-###############################################################################
-#                   Exporting to OpenMC tallies.xml File
-###############################################################################
-
-# Instantiate a tally mesh
-#mesh = openmc.Mesh(mesh_id=1)
-#mesh.type = 'regular'
-#mesh.dimension = [25, 25, 25]
-#mesh.lower_left = [0.0, 0.0, 0.0]
-#mesh.upper_right = [25.0, 25.0, 25.0]
-
-# Instantiate some tally Filters
-#energy_filter = openmc.Filter(type='energy',
-#                              bins=[1E-11, 4.0E-6, 20.0])
-#mesh_filter = openmc.Filter()
-#mesh_filter.mesh = mesh
-
-# Instantiate the Tally
-#tally = openmc.Tally(tally_id=1, name='tally 1')
-#tally.add_filter(energy_filter)
-#tally.add_filter(mesh_filter)
-#tally.add_score('flux')
-#tally.add_score('fission')
-#tally.add_score('nu-fission')
-
-# Instantiate a TalliesFile, register all Tallies, and export to XML
-#tallies_file = openmc.TalliesFile()
-#tallies_file.add_mesh(mesh)
-#tallies_file.add_tally(tally)
-#tallies_file.export_to_xml()
