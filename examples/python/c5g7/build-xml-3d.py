@@ -1,5 +1,5 @@
 import openmc
-from lattices import lattices, universes, cells
+from lattices import lattices, universes, cells, surfaces
 
 ###############################################################################
 #                      Simulation Input File Parameters
@@ -29,59 +29,19 @@ materials_file.export_to_xml()
 ###############################################################################
 
 # Instantiate Core boundaries
-core_x_min = openmc.XPlane(surface_id=2, x0=-32.13, name='Core x-min')
-core_y_min = openmc.YPlane(surface_id=3, y0=-32.13, name='Core y-min')
-core_z_min = openmc.ZPlane(surface_id=4, z0= 0.0  , name='Core z-min')
-core_x_max = openmc.XPlane(surface_id=5, x0= 32.13, name='Core x-max')
-core_y_max = openmc.YPlane(surface_id=6, y0= 32.13, name='Core y-max')
-core_z_max = openmc.ZPlane(surface_id=7, z0=214.20, name='Core z-max')
-
-core_x_min.boundary_type = 'reflective'
-core_y_min.boundary_type = 'vacuum'
-core_z_min.boundary_type = 'reflective'
-core_x_max.boundary_type = 'vacuum'
-core_y_max.boundary_type = 'reflective'
-core_z_max.boundary_type = 'vacuum'
-
-cells['Core'].region = +core_x_min & +core_y_min & +core_z_min & -core_x_max & -core_y_max & -core_z_max
+cells['Core'].region = +surfaces['Core x-min'] & +surfaces['Core y-min'] & \
+                       +surfaces['Big Core z-min'] & -surfaces['Core x-max'] & \
+                       -surfaces['Core y-max'] & -surfaces['Big Core z-max']
 
 lattices['Core'] = openmc.RectLattice(lattice_id=201, name='3x3 core lattice')
 lattices['Core'].dimension = [3,3,10]
-lattices['Core'].lower_left = [-32.13, -32.13, 0.0]
+lattices['Core'].lower_left = [-32.13, -32.13, -107.1]
 lattices['Core'].pitch = [21.42, 21.42, 21.42]
 w = universes['Reflector Unrodded Assembly']
 u = universes['UO2 Unrodded Assembly']
 m = universes['MOX Unrodded Assembly']
-lattices['Core'].universes = [[[u, m, w],
-                               [m, u, w],
-                               [w, w, w]],
-                              [[u, m, w],
-                               [m, u, w],
-                               [w, w, w]],
-                              [[u, m, w],
-                               [m, u, w],
-                               [w, w, w]],
-                              [[u, m, w],
-                               [m, u, w],
-                               [w, w, w]],
-                              [[u, m, w],
-                               [m, u, w],
-                               [w, w, w]],
-                              [[u, m, w],
-                               [m, u, w],
-                               [w, w, w]],
-                              [[u, m, w],
-                               [m, u, w],
-                               [w, w, w]],
-                              [[u, m, w],
-                               [m, u, w],
-                               [w, w, w]],
-                              [[u, m, w],
-                               [m, u, w],
-                               [w, w, w]],
-                              [[w, w, w],
-                               [w, w, w],
-                               [w, w, w]]]
+lattices['Core'].universes = [[[u, m, w], [m, u, w], [w, w, w]]] * 9 + \
+                             [[[w, w, w], [w, w, w], [w, w, w]]]
 
 # Add Core lattice to Core cell
 cells['Core'].fill = lattices['Core']
@@ -107,10 +67,10 @@ settings_file.cross_sections = "./mg_cross_sections.xml"
 settings_file.batches = batches
 settings_file.inactive = inactive
 settings_file.particles = particles
-settings_file.set_source_space('box', [-32.13, -10.71, 0.0,
-                                       10.71, 32.13, 192.78])
-settings_file.entropy_lower_left = [-32.13, -32.13, 0.0]
-settings_file.entropy_upper_right = [32.13, 32.13, 214.20]
+settings_file.set_source_space('box', [-32.13, -10.71, -107.1,
+                                       10.71, 32.13, 85.68])
+settings_file.entropy_lower_left = [-32.13, -32.13, -107.1]
+settings_file.entropy_upper_right = [32.13,  32.13,  107.1]
 settings_file.entropy_dimension = [51, 51, 30]
 settings_file.export_to_xml()
 
@@ -129,7 +89,7 @@ plot_1.basis = 'xy'
 
 plot_2 = openmc.Plot(plot_id=2)
 plot_2.filename = 'plot_2'
-plot_2.origin = [0.0, 0.0, 107.1]
+plot_2.origin = [0.0, 0.0, 0.0]
 plot_2.width = [64.26, 214.2]
 plot_2.pixels = [500, 500]
 plot_2.color = 'mat'

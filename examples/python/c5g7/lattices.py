@@ -1,7 +1,7 @@
 import openmc
 import openmc.mgxs
 import numpy as np
-from universes import universes, cells
+from universes import universes, cells, surfaces
 
 ###############################################################################
 #                     Create a dictionary of the assembly lattices

@@ -1,5 +1,5 @@
 import openmc
-from cells import cells
+from cells import cells, surfaces
 
 ###############################################################################
 #                     Create a dictionary of all shared universes

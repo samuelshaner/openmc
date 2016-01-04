@@ -1,5 +1,5 @@
 import openmc
-from lattices import lattices, universes, cells
+from lattices import lattices, universes, cells, surfaces
 
 ###############################################################################
 #                      Simulation Input File Parameters
@@ -29,21 +29,9 @@ materials_file.export_to_xml()
 ###############################################################################
 
 # Instantiate Core boundaries
-core_x_min = openmc.XPlane(surface_id=2, x0=-32.13, name='Core x-min')
-core_y_min = openmc.YPlane(surface_id=3, y0=-32.13, name='Core y-min')
-core_z_min = openmc.ZPlane(surface_id=4, z0=-32.13, name='Core z-min')
-core_x_max = openmc.XPlane(surface_id=5, x0= 32.13, name='Core x-max')
-core_y_max = openmc.YPlane(surface_id=6, y0= 32.13, name='Core y-max')
-core_z_max = openmc.ZPlane(surface_id=7, z0= 32.13, name='Core z-max')
-
-core_x_min.boundary_type = 'reflective'
-core_y_min.boundary_type = 'vacuum'
-core_z_min.boundary_type = 'reflective'
-core_x_max.boundary_type = 'vacuum'
-core_y_max.boundary_type = 'reflective'
-core_z_max.boundary_type = 'vacuum'
-
-cells['Core'].region = +core_x_min & +core_y_min & +core_z_min & -core_x_max & -core_y_max & -core_z_max
+cells['Core'].region = +surfaces['Core x-min'] & +surfaces['Core y-min'] & \
+                       +surfaces['Small Core z-min'] & -surfaces['Core x-max'] & \
+                       -surfaces['Core y-max'] & -surfaces['Small Core z-max']
 
 lattices['Core'] = openmc.RectLattice(lattice_id=201, name='3x3 core lattice')
 lattices['Core'].dimension = [3,3,9]
@@ -55,33 +43,10 @@ u = universes['UO2 Unrodded Assembly']
 v = universes['UO2 Rodded Assembly']
 m = universes['MOX Unrodded Assembly']
 n = universes['MOX Rodded Assembly']
-lattices['Core'].universes = [[[u, m, w],
-                               [m, u, w],
-                               [w, w, w]],
-                              [[u, m, w],
-                               [m, u, w],
-                               [w, w, w]],
-                              [[v, m, w],
-                               [m, u, w],
-                               [w, w, w]],
-                              [[v, m, w],
-                               [m, u, w],
-                               [w, w, w]],
-                              [[v, n, w],
-                               [n, u, w],
-                               [w, w, w]],
-                              [[v, n, w],
-                               [n, u, w],
-                               [w, w, w]],
-                              [[x, x, w],
-                               [x, x, w],
-                               [w, w, w]],
-                              [[x, x, w],
-                               [x, x, w],
-                               [w, w, w]],
-                              [[x, x, w],
-                               [x, x, w],
-                               [w, w, w]]]
+lattices['Core'].universes = [[[u, m, w], [m, u, w], [w, w, w]]] * 2 + \
+                             [[[v, m, w], [m, u, w], [w, w, w]]] * 2 + \
+                             [[[v, n, w], [n, u, w], [w, w, w]]] * 2 + \
+                             [[[x, x, w], [x, x, w], [w, w, w]]] * 3
 
 # Add Core lattice to Core cell
 cells['Core'].fill = lattices['Core']
