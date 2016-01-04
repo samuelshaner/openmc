@@ -26,7 +26,7 @@ cells['Control Rod Moderator']       = openmc.Cell(cell_id=15, name='Control Rod
 cells['UO2 Unrodded Assembly']       = openmc.Cell(cell_id=16, name='UO2 Unrodded Assembly')
 cells['UO2 Rodded Assembly']         = openmc.Cell(cell_id=17, name='UO2 Rodded Assembly')
 cells['MOX Unrodded Assembly']       = openmc.Cell(cell_id=18, name='MOX Unrodded Assembly')
-cells['MOX Rodded Assembly']         = openmc.Cell(cell_id=29, name='MOX Rodded Assembly')
+cells['MOX Rodded Assembly']         = openmc.Cell(cell_id=19, name='MOX Rodded Assembly')
 cells['Reflector Unrodded Assembly'] = openmc.Cell(cell_id=20, name='Water Unrodded Assembly')
 cells['Reflector Rodded Assembly']   = openmc.Cell(cell_id=21, name='Water Rodded Assembly')
 cells['Core']                        = openmc.Cell(cell_id=22, name='Core')
