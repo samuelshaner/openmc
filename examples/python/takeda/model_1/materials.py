@@ -16,7 +16,7 @@ core_xsdata.total = np.array([0.223775, 1.03864])
 core_xsdata.absorption = np.array([0.00852709, 0.158196])
 scatter = [[[0.192423, 0.0228253], [0.0, 0.880439]]]
 core_xsdata.scatter = np.array(scatter[:][:])
-core_xsdata.fission = np.array([0.0004, 0.1])
+core_xsdata.fission = np.array([0.00909319, 0.290183]) * 0.5
 core_xsdata.nu_fission = np.array([0.00909319, 0.290183])
 core_xsdata.chi = np.array([1.0, 0.0])
 
