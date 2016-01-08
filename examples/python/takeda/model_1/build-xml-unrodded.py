@@ -8,8 +8,8 @@ from universes import universes, cells
 ###############################################################################
 
 # OpenMC simulation parameters
-batches = 200
-inactive = 100
+batches = 20
+inactive = 10
 particles = 10000
 
 
@@ -96,3 +96,28 @@ plot_file.add_plot(plot_1)
 plot_file.add_plot(plot_2)
 plot_file.add_plot(plot_3)
 plot_file.export_to_xml()
+
+###############################################################################
+#                   Exporting to OpenMC tallies.xml File
+###############################################################################
+
+# Instantiate some tally Filters
+cell_filter = openmc.Filter(type='cell',
+                              bins=[cells['Core'].id, cells['Void'].id,
+                                    cells['Reflector'].id])
+
+# Instantiate the Tally
+tally_1 = openmc.Tally(tally_id=1, name='tally 1')
+tally_1.add_filter(cell_filter)
+tally_1.add_score('flux')
+tally_1.add_score('fission')
+tally_1.add_score('nu-fission')
+
+tally_2 = openmc.Tally(tally_id=2, name='tally 2')
+tally_2.add_score('flux')
+
+# Instantiate a TalliesFile, register all Tallies, and export to XML
+tallies_file = openmc.TalliesFile()
+tallies_file.add_tally(tally_1)
+tallies_file.add_tally(tally_2)
+tallies_file.export_to_xml()

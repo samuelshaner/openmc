@@ -221,8 +221,8 @@ class Xsdata(object):
         check_type("energy_groups", energy_groups, EnergyGroups)
 
         # Check that there is one or more groups
-        if ((energy_groups.num_energy_groups.num_group is None) or
-            (energy_groups.num_energy_groups.num_group < 1)):
+        if ((energy_groups.num_energy_groups.num_groups is None) or
+            (energy_groups.num_energy_groups.num_groups < 1)):
 
             msg = 'energy_groups object incorrectly initialized.'
             raise ValueError(msg)
@@ -409,12 +409,12 @@ class Xsdata(object):
     @multiplicity.setter
     def multiplicity(self, multiplicity):
         if self._representation is 'isotropic':
-            shape = (self._energy_groups.num_group,
+            shape = (self._energy_groups.num_groups,
                      self._energy_groups.num_groups)
             max_depth = 2
         elif self._representation is 'angle':
             shape = (self._num_polar, self._num_azimuthal,
-                     self._energy_groups.num_group,
+                     self._energy_groups.num_groups,
                      self._energy_groups.num_groups)
             max_depth = 4
         # check we have a numpy list
@@ -700,6 +700,3 @@ class MGXSLibraryFile(object):
         tree = ET.ElementTree(self._cross_sections_file)
         tree.write(filename, xml_declaration=True,
                              encoding='utf-8', method="xml")
-
-
-

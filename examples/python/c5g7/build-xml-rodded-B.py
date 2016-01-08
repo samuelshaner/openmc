@@ -1,5 +1,6 @@
 import openmc
 from lattices import lattices, universes, cells, surfaces
+from tallies import tallies
 
 ###############################################################################
 #                      Simulation Input File Parameters
@@ -105,3 +106,15 @@ plot_file = openmc.PlotsFile()
 plot_file.add_plot(plot_1)
 plot_file.add_plot(plot_2)
 plot_file.export_to_xml()
+
+###############################################################################
+#                   Exporting to OpenMC tallies.xml File
+###############################################################################
+
+# Instantiate a TalliesFile, register Tally/Mesh, and export to XML
+tallies_file = openmc.TalliesFile()
+
+for tally in tallies.values():
+    tallies_file.add_tally(tally)
+
+tallies_file.export_to_xml()

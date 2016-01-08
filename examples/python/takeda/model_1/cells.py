@@ -11,19 +11,19 @@ cells = {}
 # Instantiate Cells
 cells['Core']        = openmc.Cell(cell_id=1, name='Core')
 cells['Control Rod'] = openmc.Cell(cell_id=2, name='Control Rod')
-cells['Void']        = openmc.Cell(cell_id=2, name='Void')
-cells['Reflector']   = openmc.Cell(cell_id=3, name='Reflector')
+cells['Void']        = openmc.Cell(cell_id=3, name='Void')
+cells['Reflector']   = openmc.Cell(cell_id=4, name='Reflector')
 
 # Use surface half-spaces to define regions
-cells['Core']       .region = +surfaces['Core x-min'] & +surfaces['Core y-min'] & +surfaces['Core z-min'] & \
-                              -surfaces['Fuel x-max'] & -surfaces['Fuel y-max'] & -surfaces['Fuel z-max']
-cells['Control Rod'].region = +surfaces['Fuel x-max'] & -surfaces['Void x-max'] & +surfaces['Core y-min'] & \
-                              -surfaces['Void y-max'] & +surfaces['Core z-min'] & -surfaces['Core z-max']
-cells['Void']       .region = +surfaces['Fuel x-max'] & -surfaces['Void x-max'] & +surfaces['Core y-min'] & \
-                              -surfaces['Void y-max'] & +surfaces['Core z-min'] & -surfaces['Core z-max']
-cells['Reflector']  .region = ~cells['Core'].region & ~cells['Void'].region & \
-                              +surfaces['Core x-min'] & +surfaces['Core y-min'] & +surfaces['Core z-min'] & \
+cells['Core']       .region = +surfaces['Root x-min'] & +surfaces['Root y-min'] & +surfaces['Root z-min'] & \
                               -surfaces['Core x-max'] & -surfaces['Core y-max'] & -surfaces['Core z-max']
+cells['Control Rod'].region = +surfaces['Core x-max'] & -surfaces['Void x-max'] & +surfaces['Root y-min'] & \
+                              -surfaces['Void y-max'] & +surfaces['Root z-min'] & -surfaces['Root z-max']
+cells['Void']       .region = +surfaces['Core x-max'] & -surfaces['Void x-max'] & +surfaces['Root y-min'] & \
+                              -surfaces['Void y-max'] & +surfaces['Root z-min'] & -surfaces['Root z-max']
+cells['Reflector']  .region = ~cells['Core'].region & ~cells['Void'].region & \
+                              +surfaces['Root x-min'] & +surfaces['Root y-min'] & +surfaces['Root z-min'] & \
+                              -surfaces['Root x-max'] & -surfaces['Root y-max'] & -surfaces['Root z-max']
 
 # Register Materials with Cells
 cells['Core'].fill = materials['Core']
