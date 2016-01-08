@@ -17,10 +17,9 @@ cells['Reflector']   = openmc.Cell(cell_id=4, name='Reflector')
 # Use surface half-spaces to define regions
 cells['Core']       .region = +surfaces['Root x-min'] & +surfaces['Root y-min'] & +surfaces['Root z-min'] & \
                               -surfaces['Core x-max'] & -surfaces['Core y-max'] & -surfaces['Core z-max']
-cells['Control Rod'].region = +surfaces['Core x-max'] & -surfaces['Void x-max'] & +surfaces['Root y-min'] & \
-                              -surfaces['Void y-max'] & +surfaces['Root z-min'] & -surfaces['Root z-max']
 cells['Void']       .region = +surfaces['Core x-max'] & -surfaces['Void x-max'] & +surfaces['Root y-min'] & \
                               -surfaces['Void y-max'] & +surfaces['Root z-min'] & -surfaces['Root z-max']
+cells['Control Rod'].region = cells['Void'].region
 cells['Reflector']  .region = ~cells['Core'].region & ~cells['Void'].region & \
                               +surfaces['Root x-min'] & +surfaces['Root y-min'] & +surfaces['Root z-min'] & \
                               -surfaces['Root x-max'] & -surfaces['Root y-max'] & -surfaces['Root z-max']
