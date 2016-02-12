@@ -10,7 +10,7 @@ import openmc.mgxs
 groups = openmc.mgxs.EnergyGroups(group_edges=[1E-11, 6.8256E-7, 10.0])
 
 # Instantiate the 2-group (Takeda) cross section data
-core_xsdata = openmc.Xsdata('core.300k', groups)
+core_xsdata = openmc.XSdata('core.300k', groups)
 core_xsdata.order = 0
 core_xsdata.total = np.array([0.223775, 1.03864])
 core_xsdata.absorption = np.array([0.00852709, 0.158196])
@@ -20,7 +20,7 @@ core_xsdata.fission = np.array([0.00909319, 0.290183]) * 0.5
 core_xsdata.nu_fission = np.array([0.00909319, 0.290183])
 core_xsdata.chi = np.array([1.0, 0.0])
 
-refl_xsdata = openmc.Xsdata('refl.300k', groups)
+refl_xsdata = openmc.XSdata('refl.300k', groups)
 refl_xsdata.order = 0
 refl_xsdata.total = np.array([0.250367, 1.64482])
 refl_xsdata.absorption = np.array([0.000416392, 0.0202999])
@@ -30,7 +30,7 @@ refl_xsdata.fission = np.array([0.0, 0.0])
 refl_xsdata.nu_fission = np.array([0.0, 0.0])
 refl_xsdata.chi = np.array([1.0, 0.0])
 
-control_rod_xsdata = openmc.Xsdata('control_rod.300k', groups)
+control_rod_xsdata = openmc.XSdata('control_rod.300k', groups)
 control_rod_xsdata.order = 0
 control_rod_xsdata.total = np.array([0.0852325, 0.217460])
 control_rod_xsdata.absorption = np.array([0.0174439, 0.182224])
@@ -40,7 +40,7 @@ control_rod_xsdata.fission = np.array([0.0, 0.0])
 control_rod_xsdata.nu_fission = np.array([0.0, 0.0])
 control_rod_xsdata.chi = np.array([1.0, 0.0])
 
-void_xsdata = openmc.Xsdata('void.300k', groups)
+void_xsdata = openmc.XSdata('void.300k', groups)
 void_xsdata.order = 0
 void_xsdata.total = np.array([0.0128407, 0.0120676])
 void_xsdata.absorption = np.array([0.0000465132, 0.00132890])

@@ -6,49 +6,49 @@
   <!-- UO2 -->
   <material id="1">
     <density units="macro" value="1.0" />
-    <macroscopic name="UO2"/>
+    <macroscopic name="UO2" xs="300K"/>
   </material>
 
   <!-- 4.3% MOX -->
   <material id="2">
     <density units="macro" value="1.0" />
-    <macroscopic name="MOX1"/>
+    <macroscopic name="MOX1" xs="300K"/>
   </material>
 
   <!-- 7.0 MOX -->
   <material id="3">
     <density units="macro" value="1.0" />
-    <macroscopic name="MOX2"/>
+    <macroscopic name="MOX2" xs="300K"/>
   </material>
 
   <!-- 8.0% MOX -->
   <material id="4">
     <density units="macro" value="1.0" />
-    <macroscopic name="MOX3"/>
+    <macroscopic name="MOX3" xs="300K"/>
   </material>
 
   <!-- Fission Chamber -->
   <material id="5">
     <density units="macro" value="1.0" />
-    <macroscopic name="FC"/>
+    <macroscopic name="FC" xs="300K"/>
   </material>
 
   <!-- Guide Tube -->
   <material id="6">
     <density units="macro" value="1.0" />
-    <macroscopic name="GT"/>
+    <macroscopic name="GT" xs="300K"/>
   </material>
 
   <!-- Water -->
   <material id="7">
     <density units="macro" value="1.0" />
-    <macroscopic name="LWTR"/>
+    <macroscopic name="LWTR" xs="300K"/>
   </material>
 
   <!-- Control Rod -->
   <material id="8">
     <density units="macro" value="1.0" />
-    <macroscopic name="CR"/>
+    <macroscopic name="CR" xs="300K"/>
   </material>
 
 </materials>

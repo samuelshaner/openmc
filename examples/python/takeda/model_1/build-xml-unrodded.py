@@ -2,6 +2,8 @@ import openmc
 import openmc.mgxs
 import numpy as np
 from universes import universes, cells
+from openmc.source import Source
+from openmc.stats import Box
 
 ###############################################################################
 #                      Simulation Input File Parameters
@@ -54,8 +56,7 @@ settings_file.cross_sections = "./mg_cross_sections.xml"
 settings_file.batches = batches
 settings_file.inactive = inactive
 settings_file.particles = particles
-settings_file.set_source_space('box', [0.0, 0.0, 0.0,
-                                       15.0, 15.0, 15.0])
+settings_file.source = Source(space=Box([0, 0, 0], [15, 15, 15]))
 settings_file.entropy_lower_left = [0.0, 0.0, 0.0]
 settings_file.entropy_upper_right = [25.0, 25.0, 25.0]
 settings_file.entropy_dimension = [25, 25, 25]

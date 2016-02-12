@@ -1,5 +1,7 @@
 import openmc
 from lattices import lattices, universes, cells
+from openmc.source import Source
+from openmc.stats import Box
 
 ###############################################################################
 #                      Simulation Input File Parameters
@@ -61,8 +63,8 @@ settings_file.cross_sections = "./mg_cross_sections.xml"
 settings_file.batches = batches
 settings_file.inactive = inactive
 settings_file.particles = particles
-settings_file.set_source_space('box', [-35.0, -35.0, -75.0,
-                                        35.0,  35.0,  75.0])
+settings_file.source = Source(space=Box([-35.0, -35.0, -75.0],
+                                        [35.0,  35.0,  75.0]))
 settings_file.entropy_lower_left  = [-35.0, -35.0, -75.0]
 settings_file.entropy_upper_right = [ 35.0,  35.0,  75.0]
 settings_file.entropy_dimension = [14, 14, 30]

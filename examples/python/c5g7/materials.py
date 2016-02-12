@@ -10,7 +10,7 @@ import numpy as np
 groups = openmc.mgxs.EnergyGroups(np.logspace(-11,1,8))
 
 # Instantiate the 7-group C5G7 cross section data
-uo2_xsdata = openmc.Xsdata('uo2.300k', groups)
+uo2_xsdata = openmc.XSdata('uo2.300k', groups)
 uo2_xsdata.order = 0
 uo2_xsdata.total = np.array([1.779490E-01, 3.298050E-01, 4.803880E-01, 5.543670E-01, 3.118010E-01, 3.951680E-01, 5.644060E-01])
 uo2_xsdata.absorption = np.array([8.02480E-03, 3.71740E-03, 2.67690E-02, 9.62360E-02, 3.00200E-02, 1.11260E-01, 2.82780E-01])
@@ -25,7 +25,7 @@ uo2_xsdata.fission = np.array([7.212060E-03, 8.193010E-04, 6.453200E-03, 1.85648
 uo2_xsdata.nu_fission = np.array([2.005998E-02, 2.027303E-03, 1.570599E-02, 4.518301E-02, 4.334208E-02, 2.020901E-01, 5.257105E-01])
 uo2_xsdata.chi = np.array([5.87910E-01, 4.11760E-01, 3.39060E-04, 1.17610E-07, 0.000000E-00, 0.000000E-00, 0.000000E-00])
 
-mox43_xsdata = openmc.Xsdata('mox43.300k', groups)
+mox43_xsdata = openmc.XSdata('mox43.300k', groups)
 mox43_xsdata.order = 0
 mox43_xsdata.total = np.array([1.787310E-01, 3.308490E-01, 4.837720E-01, 5.669220E-01, 4.262270E-01, 6.789970E-01, 6.828520E-01])
 mox43_xsdata.absorption = np.array([8.43390E-03, 3.75770E-03, 2.79700E-02, 1.04210E-01, 1.39940E-01, 4.09180E-01, 4.09350E-01])
@@ -40,7 +40,7 @@ mox43_xsdata.fission = np.array([7.62704E-03, 8.76898E-04, 5.69835E-03, 2.28872E
 mox43_xsdata.nu_fission = np.array([2.175300E-02, 2.535103E-03, 1.626799E-02, 6.547410E-02, 3.072409E-02, 6.666510E-01, 7.139904E-01])
 mox43_xsdata.chi = np.array([5.87910E-01, 4.11760E-01, 3.39060E-04, 1.17610E-07, 0.000000E-00, 0.000000E-00, 0.000000E-00])
 
-mox7_xsdata = openmc.Xsdata('mox7.300k', groups)
+mox7_xsdata = openmc.XSdata('mox7.300k', groups)
 mox7_xsdata.order = 0
 mox7_xsdata.total = np.array([1.813230E-01, 3.343680E-01, 4.937850E-01, 5.912160E-01, 4.741980E-01, 8.336010E-01, 8.536030E-01])
 mox7_xsdata.absorption = np.array([9.06570E-03, 4.29670E-03, 3.28810E-02, 1.22030E-01, 1.82980E-01, 5.68460E-01, 5.85210E-01])
@@ -55,7 +55,7 @@ mox7_xsdata.fission = np.array([8.25446E-03, 1.32565E-03, 8.42156E-03, 3.28730E-
 mox7_xsdata.nu_fission = np.array([2.381395E-02, 3.858689E-03, 2.413400E-02, 9.436622E-02, 4.576988E-02, 9.281814E-01, 1.043200E+00])
 mox7_xsdata.chi = np.array([5.87910E-01, 4.11760E-01, 3.39060E-04, 1.17610E-07, 0.000000E-00, 0.000000E-00, 0.000000E-00])
 
-mox87_xsdata = openmc.Xsdata('mox87.300k', groups)
+mox87_xsdata = openmc.XSdata('mox87.300k', groups)
 mox87_xsdata.order = 0
 mox87_xsdata.total = np.array([1.830450E-01, 3.367050E-01, 5.005070E-01, 6.061740E-01, 5.027540E-01, 9.210280E-01, 9.552310E-01])
 mox87_xsdata.absorption = np.array([9.48620E-03, 4.65560E-03, 3.62400E-02, 1.32720E-01, 2.08400E-01, 6.58700E-01, 6.90170E-01])
@@ -70,7 +70,7 @@ mox87_xsdata.fission = np.array([8.67209E-03, 1.62426E-03, 1.02716E-02, 3.90447E
 mox87_xsdata.nu_fission = np.array([2.518600E-02, 4.739509E-03, 2.947805E-02, 1.122500E-01, 5.530301E-02, 1.074999E+00, 1.239298E+00])
 mox87_xsdata.chi = np.array([5.87910E-01, 4.11760E-01, 3.39060E-04, 1.17610E-07, 0.000000E-00, 0.000000E-00, 0.000000E-00])
 
-fiss_chamber_xsdata = openmc.Xsdata('fiss_chamber.300k', groups)
+fiss_chamber_xsdata = openmc.XSdata('fiss_chamber.300k', groups)
 fiss_chamber_xsdata.order = 0
 fiss_chamber_xsdata.total = np.array([1.260320E-01, 2.931600E-01, 2.842500E-01, 2.810200E-01, 3.344600E-01, 5.656400E-01, 1.172140E+00])
 fiss_chamber_xsdata.absorption = np.array([5.11320E-04, 7.58130E-05, 3.16430E-04, 1.16750E-03, 3.39770E-03, 9.18860E-03, 2.32440E-02])
@@ -85,7 +85,7 @@ fiss_chamber_xsdata.fission = np.array([4.79002E-09, 5.82564E-09, 4.63719E-07, 5
 fiss_chamber_xsdata.nu_fission = np.array([1.323401E-08, 1.434500E-08, 1.128599E-06, 1.276299E-05, 3.538502E-07, 1.740099E-06, 5.063302E-06])
 fiss_chamber_xsdata.chi = np.array([5.87910E-01, 4.11760E-01, 3.39060E-04, 1.17610E-07, 0.000000E-00, 0.000000E-00, 0.000000E-00])
 
-guide_tube_xsdata = openmc.Xsdata('guide_tube.300k', groups)
+guide_tube_xsdata = openmc.XSdata('guide_tube.300k', groups)
 guide_tube_xsdata.order = 0
 guide_tube_xsdata.total = np.array([1.260320E-01, 2.931600E-01, 2.842400E-01, 2.809600E-01, 3.344400E-01, 5.656400E-01, 1.172150E+00])
 guide_tube_xsdata.absorption = np.array([5.11320E-04, 7.58010E-05, 3.15720E-04, 1.15820E-03, 3.39750E-03, 9.18780E-03, 2.32420E-02])
@@ -100,7 +100,7 @@ guide_tube_xsdata.fission = np.zeros(7)
 guide_tube_xsdata.nu_fission = np.zeros(7)
 guide_tube_xsdata.chi = np.zeros(7)
 
-water_xsdata = openmc.Xsdata('water.300k', groups)
+water_xsdata = openmc.XSdata('water.300k', groups)
 water_xsdata.order = 0
 water_xsdata.total = np.array([1.592060E-01, 4.129700E-01, 5.903100E-01, 5.843500E-01, 7.180000E-01, 1.254450E+00, 2.650380E+00])
 water_xsdata.absorption = np.array([6.01050E-04, 1.57930E-05, 3.37160E-04, 1.94060E-03, 5.74160E-03, 1.50010E-02, 3.72390E-02])
@@ -115,7 +115,7 @@ water_xsdata.fission = np.zeros(7)
 water_xsdata.nu_fission = np.zeros(7)
 water_xsdata.chi = np.zeros(7)
 
-control_rod_xsdata = openmc.Xsdata('control_rod.300k', groups)
+control_rod_xsdata = openmc.XSdata('control_rod.300k', groups)
 control_rod_xsdata.order = 0
 control_rod_xsdata.total = np.array([2.16768E-01, 4.80098E-01, 8.86369E-01, 9.70009E-01, 9.10482E-01, 1.13775E+00, 1.84048E+00])
 control_rod_xsdata.absorption = np.array([1.70490E-03, 8.36224E-03, 8.37901E-02, 3.97797E-01, 6.98763E-01, 9.29508E-01, 1.17836E+00])

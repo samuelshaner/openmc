@@ -143,8 +143,8 @@ settings_file.cross_sections = "./mg_cross_sections.xml"
 settings_file.batches = batches
 settings_file.inactive = inactive
 settings_file.particles = particles
-settings_file.set_source_space('box', [-0.63, -0.63, -1, \
-                                      0.63, 0.63, 1])
+#settings_file.set_source_space('box', [-0.63, -0.63, -1, \
+#                                      0.63, 0.63, 1])
 
 ###############################################################################
 #                   Exporting to OpenMC tallies.xml File
