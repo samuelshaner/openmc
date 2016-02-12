@@ -5,20 +5,20 @@ module nuclide_header
   use ace_header
   use constants
   use endf,        only: reaction_name
+  use error,       only: fatal_error
   use list_header, only: ListInt
   use math,        only: evaluate_legendre
-  !use scattdata_header
-  use simple_string
-
+  use string
+  use xml_interface
   implicit none
 
 !===============================================================================
-! NUCLIDE_BASE contains the base nuclidic data for a nuclide, which does not depend
+! Nuclide contains the base nuclidic data for a nuclide, which does not depend
 ! upon how the nuclear data is represented (i.e., CE, or any variant of MG).
-! The extended types, Nuclide_CE and Nuclide_MG deal with the rest
+! The extended types, NuclideCE and NuclideMG deal with the rest
 !===============================================================================
 
-  type, abstract :: Nuclide_Base
+  type, abstract :: Nuclide
     character(12) :: name    ! name of nuclide, e.g. 92235.03c
     integer       :: zaid    ! Z and A identifier, e.g. 92235
     real(8)       :: awr     ! Atomic Weight Ratio
@@ -31,27 +31,21 @@ module nuclide_header
     ! Fission information
     logical :: fissionable         ! nuclide is fissionable?
 
-    contains
-      procedure(nuclide_base_clear_), deferred, pass :: clear ! Deallocates Nuclide
-      procedure(print_nuclide_),      deferred, pass :: print ! Writes nuclide info
-  end type Nuclide_Base
+  contains
+    procedure(print_nuclide_), deferred :: print ! Writes nuclide info
+  end type Nuclide
 
   abstract interface
 
-    subroutine nuclide_base_clear_(this)
-      import Nuclide_Base
-      class(Nuclide_Base), intent(inout) :: this
-    end subroutine nuclide_base_clear_
-
     subroutine print_nuclide_(this, unit)
-      import Nuclide_Base
-      class(Nuclide_Base),intent(in) :: this
-      integer, optional,  intent(in) :: unit
+      import Nuclide
+      class(Nuclide),intent(in)     :: this
+      integer, optional, intent(in) :: unit
     end subroutine print_nuclide_
 
   end interface
 
-  type, extends(Nuclide_Base) :: Nuclide_CE
+  type, extends(Nuclide) :: NuclideCE
     ! Energy grid information
     integer :: n_grid                     ! # of nuclide grid points
     integer, allocatable :: grid_index(:) ! log grid mapping indices
@@ -94,7 +88,7 @@ module nuclide_header
     integer :: n_precursor ! # of delayed neutron precursors
     real(8), allocatable :: nu_d_data(:)
     real(8), allocatable :: nu_d_precursor_data(:)
-    type(DistEnergy), pointer :: nu_d_edist(:) => null()
+    type(AngleEnergyContainer), allocatable :: nu_d_edist(:)
 
     ! Unresolved resonance data
     logical                :: urr_present
@@ -107,31 +101,40 @@ module nuclide_header
     type(DictIntInt) :: reaction_index ! map MT values to index in reactions
                                        ! array; used at tally-time
 
-    ! Type-Bound procedures
-    contains
-      procedure, pass :: clear => nuclide_ce_clear
-      procedure, pass :: print => nuclide_ce_print
-  end type Nuclide_CE
+  contains
+    procedure :: clear => nuclidece_clear
+    procedure :: print => nuclidece_print
+  end type NuclideCE
 
-  type, abstract, extends(Nuclide_Base) :: Nuclide_MG
+  type, abstract, extends(Nuclide) :: NuclideMG
     ! Scattering Order Information
-    integer :: order      ! Order of data (Scattering for Nuclide_Iso,
-                          ! Number of angles for all in Nuclide_Angle)
+    integer :: order      ! Order of data (Scattering for NuclideIso,
+                          ! Number of angles for all in NuclideAngle)
     integer :: scatt_type ! either legendre, histogram, or tabular.
     integer :: legendre_mu_points ! Number of tabular points to use to represent
                                   ! Legendre distribs, -1 if sample with the
                                   ! Legendres themselves
-! Type-Bound procedures
-    contains
-      procedure(nuclide_mg_get_xs_), deferred, pass :: get_xs ! Get the xs
-      procedure(nuclide_calc_f_), deferred, pass    :: calc_f ! Calculates f, given mu
-  end type Nuclide_MG
+  contains
+    procedure(nuclidemg_init_),   deferred :: init   ! Initialize the data
+    procedure(nuclidemg_get_xs_), deferred :: get_xs ! Get the requested xs
+    procedure(nuclidemg_calc_f_), deferred :: calc_f ! Calculates f, given mu
+  end type NuclideMG
 
   abstract interface
-    function nuclide_mg_get_xs_(this, g, xstype, gout, uvw, mu, i_azi, i_pol) &
+
+    subroutine nuclidemg_init_(this, node_xsdata, groups, get_kfiss, get_fiss)
+      import NuclideMG, Node
+      class(NuclideMG), intent(inout) :: this        ! Working Object
+      type(Node), pointer, intent(in) :: node_xsdata ! Data from MGXS xml
+      integer, intent(in)             :: groups      ! Number of Energy groups
+      logical, intent(in)             :: get_kfiss   ! Need Kappa-Fission?
+      logical, intent(in)             :: get_fiss    ! Should we get fiss data?
+    end subroutine nuclidemg_init_
+
+    function nuclidemg_get_xs_(this, g, xstype, gout, uvw, mu, i_azi, i_pol) &
          result(xs)
-      import Nuclide_MG
-      class(Nuclide_MG), intent(in) :: this
+      import NuclideMG
+      class(NuclideMG), intent(in) :: this
       integer, intent(in)           :: g      ! Incoming Energy group
       character(*), intent(in)      :: xstype ! Cross Section Type
       integer, optional, intent(in) :: gout   ! Outgoing Group
@@ -140,11 +143,11 @@ module nuclide_header
       integer, optional, intent(in) :: i_azi  ! Azimuthal Index
       integer, optional, intent(in) :: i_pol  ! Polar Index
       real(8)                       :: xs     ! Resultant xs
-    end function nuclide_mg_get_xs_
+    end function nuclidemg_get_xs_
 
-    pure function nuclide_calc_f_(this, gin, gout, mu, uvw, i_azi, i_pol) result(f)
-      import Nuclide_MG
-      class(Nuclide_MG), intent(in) :: this
+    pure function nuclidemg_calc_f_(this, gin, gout, mu, uvw, i_azi, i_pol) result(f)
+      import NuclideMG
+      class(NuclideMG), intent(in) :: this
       integer, intent(in)           :: gin   ! Incoming Energy Group
       integer, intent(in)           :: gout  ! Outgoing Energy Group
       real(8), intent(in)           :: mu    ! Angle of interest
@@ -153,15 +156,15 @@ module nuclide_header
       integer, intent(in), optional :: i_pol ! Outgoing Energy Group
       real(8)                       :: f     ! Return value of f(mu)
 
-    end function nuclide_calc_f_
+    end function nuclidemg_calc_f_
   end interface
 
-  !===============================================================================
-! NUCLIDE_ISO contains the base MGXS data for a nuclide specifically for
+!===============================================================================
+! NuclideIso contains the base MGXS data for a nuclide specifically for
 ! isotropically weighted MGXS
 !===============================================================================
 
-  type, extends(Nuclide_MG) :: Nuclide_Iso
+  type, extends(NuclideMG) :: NuclideIso
 
     ! Microscopic cross sections
     real(8), allocatable :: total(:)        ! total cross section
@@ -173,22 +176,21 @@ module nuclide_header
     real(8), allocatable :: chi(:)          ! Fission Spectra
     real(8), allocatable :: mult(:,:)       ! Scatter multiplicity (Gout x Gin)
 
-    ! Type-Bound procedures
-    contains
-      procedure, pass :: clear  => nuclide_iso_clear     ! Deallocates Nuclide
-      procedure, pass :: print  => nuclide_iso_print     ! Writes nuclide info
-      procedure, pass :: get_xs => nuclide_iso_get_xs    ! Gets Size of Data w/in Object
-      procedure, pass :: calc_f => nuclide_mg_iso_calc_f ! Calcs f given mu
-  end type Nuclide_Iso
+  contains
+    procedure :: init   => nuclideiso_init   ! Initialize Nuclidic MGXS Data
+    procedure :: print  => nuclideiso_print  ! Writes nuclide info
+    procedure :: get_xs => nuclideiso_get_xs ! Gets Size of Data w/in Object
+    procedure :: calc_f => nuclideiso_calc_f ! Calcs f given mu
+  end type NuclideIso
 
 !===============================================================================
-! NUCLIDE_ANGLE contains the base MGXS data for a nuclide specifically for
+! NuclideAngle contains the base MGXS data for a nuclide specifically for
 ! explicit angle-dependent weighted MGXS
 !===============================================================================
 
-  type, extends(Nuclide_MG) :: Nuclide_Angle
+  type, extends(NuclideMG) :: NuclideAngle
 
-    ! Microscopic cross sections. Dimensions are: (Npol, Nazi, Nl, Ng, Ng)
+    ! Microscopic cross sections. Dimensions are: (n_pol, n_azi, Nl, Ng, Ng)
     real(8), allocatable :: total(:,:,:)        ! total cross section
     real(8), allocatable :: absorption(:,:,:)   ! absorption cross section
     real(8), allocatable :: scatter(:,:,:,:,:)  ! scattering information
@@ -199,41 +201,38 @@ module nuclide_header
     real(8), allocatable :: mult(:,:,:,:)       ! Scatter multiplicity (Gout x Gin)
 
     ! In all cases, right-most indices are theta, phi
-    integer              :: Npol         ! Number of polar angles
-    integer              :: Nazi         ! Number of azimuthal angles
+    integer              :: n_pol         ! Number of polar angles
+    integer              :: n_azi         ! Number of azimuthal angles
     real(8), allocatable :: polar(:)     ! polar angles
     real(8), allocatable :: azimuthal(:) ! azimuthal angles
 
-    ! Type-Bound procedures
-    contains
-      procedure, pass :: clear  => nuclide_angle_clear     ! Deallocates Nuclide
-      procedure, pass :: print  => nuclide_angle_print     ! Gets Size of Data w/in Object
-      procedure, pass :: get_xs => nuclide_angle_get_xs    ! Gets Size of Data w/in Object
-      procedure, pass :: calc_f => nuclide_mg_angle_calc_f ! Calcs f given mu
-  end type Nuclide_Angle
+  contains
+    procedure :: init   => nuclideangle_init   ! Initialize Nuclidic MGXS Data
+    procedure :: print  => nuclideangle_print  ! Gets Size of Data w/in Object
+    procedure :: get_xs => nuclideangle_get_xs ! Gets Size of Data w/in Object
+    procedure :: calc_f => nuclideangle_calc_f ! Calcs f given mu
+  end type NuclideAngle
 
 !===============================================================================
 ! NUCLIDEMGCONTAINER pointer array for storing Nuclides
 !===============================================================================
 
   type NuclideMGContainer
-    class(Nuclide_MG), pointer :: obj
+    class(NuclideMG), pointer :: obj
   end type NuclideMGContainer
 
 !===============================================================================
 ! NUCLIDE0K temporarily contains all 0K cross section data and other parameters
-! needed to treat resonance scattering before transferring them to NUCLIDE_CE
+! needed to treat resonance scattering before transferring them to NuclideCE
 !===============================================================================
 
   type Nuclide0K
-
     character(10) :: nuclide             ! name of nuclide, e.g. U-238
     character(16) :: scheme = 'ares'     ! target velocity sampling scheme
     character(10) :: name                ! name of nuclide, e.g. 92235.03c
     character(10) :: name_0K             ! name of 0K nuclide, e.g. 92235.00c
     real(8)       :: E_min = 0.01e-6_8   ! lower cutoff energy for res scattering
     real(8)       :: E_max = 1000.0e-6_8 ! upper cutoff energy for res scattering
-
   end type Nuclide0K
 
 !===============================================================================
@@ -298,26 +297,404 @@ module nuclide_header
   contains
 
 !===============================================================================
-! NUCLIDE_*_CLEAR resets and deallocates data in Nuclide_Base, Nuclide_Iso
-! or Nuclide_Angle
+! NUCLIDE_*_INIT reads in the data from the XML file, as already accessed
 !===============================================================================
 
-    subroutine nuclide_ce_clear(this)
+    subroutine nuclidemg_init(this, node_xsdata, groups, get_kfiss, get_fiss)
+      class(NuclideMG), intent(inout) :: this        ! Working Object
+      type(Node), pointer, intent(in) :: node_xsdata ! Data from MGXS xml
+      integer, intent(in)             :: groups      ! Number of Energy groups
+      logical, intent(in)             :: get_kfiss   ! Need Kappa-Fission?
+      logical, intent(in)             :: get_fiss    ! Should we get fiss data?
 
-      class(Nuclide_CE), intent(inout) :: this ! The Nuclide object to clear
+      type(Node), pointer     :: node_legendre_mu
+      character(MAX_LINE_LEN) :: temp_str
+      logical                 :: enable_leg_mu
+
+      ! Load the data
+      call get_node_value(node_xsdata, "name", this % name)
+      this % name = to_lower(this % name)
+      if (check_for_node(node_xsdata, "kT")) then
+        call get_node_value(node_xsdata, "kT", this % kT)
+      else
+        this % kT = ZERO
+      end if
+      if (check_for_node(node_xsdata, "zaid")) then
+        call get_node_value(node_xsdata, "zaid", this % zaid)
+      else
+        this % zaid = -1
+      end if
+      if (check_for_node(node_xsdata, "scatt_type")) then
+        call get_node_value(node_xsdata, "scatt_type", temp_str)
+        temp_str = trim(to_lower(temp_str))
+        if (temp_str == 'legendre') then
+          this % scatt_type = ANGLE_LEGENDRE
+        else if (temp_str == 'histogram') then
+          this % scatt_type = ANGLE_HISTOGRAM
+        else if (temp_str == 'tabular') then
+          this % scatt_type = ANGLE_TABULAR
+        else
+          call fatal_error("Invalid Scatt Type Option!")
+        end if
+      else
+        this % scatt_type = ANGLE_LEGENDRE
+      end if
+
+      if (check_for_node(node_xsdata, "order")) then
+        call get_node_value(node_xsdata, "order", this % order)
+      else
+        call fatal_error("Order Must Be Provided!")
+      end if
+
+      ! Get scattering treatment
+      if (check_for_node(node_xsdata, "tabular_legendre")) then
+        call get_node_ptr(node_xsdata, "tabular_legendre", node_legendre_mu)
+        if (check_for_node(node_legendre_mu, "enable")) then
+          call get_node_value(node_legendre_mu, "enable", temp_str)
+          temp_str = trim(to_lower(temp_str))
+          if (temp_str == 'true' .or. temp_str == '1') then
+            enable_leg_mu = .true.
+          elseif (temp_str == 'false' .or. temp_str == '0') then
+            enable_leg_mu = .false.
+            this % legendre_mu_points = 1
+          else
+            call fatal_error("Unrecognized tabular_legendre/enable: " // temp_str)
+          end if
+        else
+          enable_leg_mu = .true.
+          this % legendre_mu_points = 33
+        end if
+        if (enable_leg_mu .and. &
+             check_for_node(node_legendre_mu, "num_points")) then
+          call get_node_value(node_legendre_mu, "num_points", &
+                              this % legendre_mu_points)
+          if (this % legendre_mu_points <= 0) then
+            call fatal_error("num_points element must be positive and non-zero!")
+          end if
+          this % legendre_mu_points = -1 * this % legendre_mu_points
+        end if
+      else
+        this % legendre_mu_points = 1
+      end if
+
+      if (check_for_node(node_xsdata, "fissionable")) then
+        call get_node_value(node_xsdata, "fissionable", temp_str)
+        temp_str = to_lower(temp_str)
+        if (trim(temp_str) == 'true' .or. trim(temp_str) == '1') then
+          this % fissionable = .true.
+        else
+          this % fissionable = .false.
+        end if
+      else
+        call fatal_error("Fissionable element must be set!")
+      end if
+
+    end subroutine nuclidemg_init
+
+    subroutine nuclideiso_init(this, node_xsdata, groups, get_kfiss, get_fiss)
+      class(NuclideIso), intent(inout) :: this        ! Working Object
+      type(Node), pointer, intent(in)  :: node_xsdata ! Data from MGXS xml
+      integer, intent(in)              :: groups      ! Number of Energy groups
+      logical, intent(in)              :: get_kfiss   ! Need Kappa-Fission?
+      logical, intent(in)              :: get_fiss    ! Need fiss data?
+
+      real(8), allocatable :: temp_arr(:)
+      integer :: arr_len
+      integer :: order_dim
+
+      ! Call generic data gathering routine
+      call nuclidemg_init(this, node_xsdata, groups, get_kfiss, get_fiss)
+
+      ! Load the more specific data
+      if (this % fissionable) then
+
+        if (check_for_node(node_xsdata, "chi")) then
+          ! Get chi
+          allocate(this % chi(groups))
+          call get_node_array(node_xsdata, "chi", this % chi)
+
+          ! Get nu_fission (as a vector)
+          if (check_for_node(node_xsdata, "nu_fission")) then
+            allocate(temp_arr(groups * 1))
+            call get_node_array(node_xsdata, "nu_fission", temp_arr)
+            allocate(this % nu_fission(groups, 1))
+            this % nu_fission = reshape(temp_arr, (/groups, 1/))
+            deallocate(temp_arr)
+          else
+            call fatal_error("If fissionable, must provide nu_fission!")
+          end if
+
+        else
+          ! Get nu_fission (as a matrix)
+          if (check_for_node(node_xsdata, "nu_fission")) then
+
+            allocate(temp_arr(groups*groups))
+            call get_node_array(node_xsdata, "nu_fission", temp_arr)
+            allocate(this % nu_fission(groups, groups))
+            this % nu_fission = reshape(temp_arr, (/groups, groups/))
+            deallocate(temp_arr)
+          else
+            call fatal_error("If fissionable, must provide nu_fission!")
+          end if
+        end if
+        if (get_fiss) then
+          allocate(this % fission(groups))
+          if (check_for_node(node_xsdata, "fission")) then
+            call get_node_array(node_xsdata, "fission", this % fission)
+          else
+            call fatal_error("Fission data missing, required due to fission&
+                             & tallies in tallies.xml file!")
+          end if
+        end if
+        if (get_kfiss) then
+          allocate(this % k_fission(groups))
+          if (check_for_node(node_xsdata, "kappa_fission")) then
+            call get_node_array(node_xsdata, "kappa_fission", this % k_fission)
+          else
+            call fatal_error("kappa_fission data missing, required due to &
+                             &kappa-fission tallies in tallies.xml file!")
+          end if
+        end if
+      end if
+
+      allocate(this % absorption(groups))
+      if (check_for_node(node_xsdata, "absorption")) then
+        call get_node_array(node_xsdata, "absorption", this % absorption)
+      else
+        call fatal_error("Must provide absorption!")
+      end if
+
+      if (this % scatt_type == ANGLE_LEGENDRE) then
+        order_dim = this % order + 1
+      else if (this % scatt_type == ANGLE_HISTOGRAM) then
+        order_dim = this % order
+      else if (this % scatt_type == ANGLE_TABULAR) then
+        order_dim = this % order
+      end if
+
+      allocate(this % scatter(groups, groups, order_dim))
+      if (check_for_node(node_xsdata, "scatter")) then
+        allocate(temp_arr(groups * groups * order_dim))
+        call get_node_array(node_xsdata, "scatter", temp_arr)
+        this % scatter = reshape(temp_arr, (/groups, groups, order_dim/))
+        deallocate(temp_arr)
+      else
+        call fatal_error("Must provide scatter!")
+        return
+      end if
+
+
+      allocate(this % total(groups))
+      if (check_for_node(node_xsdata, "total")) then
+        call get_node_array(node_xsdata, "total", this % total)
+      else
+        this % total = this % absorption + sum(this%scatter(:,:,1),dim=1)
+      end if
+
+      ! Get Mult Data
+      allocate(this % mult(groups, groups))
+      if (check_for_node(node_xsdata, "multiplicity")) then
+        arr_len = get_arraysize_double(node_xsdata, "multiplicity")
+        if (arr_len == groups * groups) then
+          allocate(temp_arr(arr_len))
+          call get_node_array(node_xsdata, "multiplicity", temp_arr)
+          this % mult = reshape(temp_arr, (/groups, groups/))
+          deallocate(temp_arr)
+        else
+          call fatal_error("Multiplicity length not same as number of groups&
+                           & squared!")
+          return
+        end if
+      else
+        this % mult = ONE
+      end if
+
+    end subroutine nuclideiso_init
+
+    subroutine nuclideangle_init(this, node_xsdata, groups, get_kfiss, get_fiss)
+      class(NuclideAngle), intent(inout) :: this        ! Working Object
+      type(Node), pointer, intent(in)    :: node_xsdata ! Data from MGXS xml
+      integer, intent(in)                :: groups      ! Number of Energy groups
+      logical, intent(in)                :: get_kfiss   ! Need Kappa-Fission?
+      logical, intent(in)                :: get_fiss    ! Should we get fiss data?
+
+      real(8), allocatable :: temp_arr(:)
+      integer :: arr_len
+      real(8) :: dangle
+      integer :: iangle
+      integer :: order_dim
+
+      ! Call generic data gathering routine
+      call nuclidemg_init(this, node_xsdata, groups, get_kfiss, get_fiss)
+
+      if (this % scatt_type == ANGLE_LEGENDRE) then
+        order_dim = this % order + 1
+      else if (this % scatt_type == ANGLE_HISTOGRAM) then
+        order_dim = this % order
+      else if (this % scatt_type == ANGLE_TABULAR) then
+        order_dim = this % order
+      end if
+
+      if (check_for_node(node_xsdata, "num_polar")) then
+        call get_node_value(node_xsdata, "num_polar", this % n_pol)
+      else
+        call fatal_error("num_polar Must Be Provided!")
+      end if
+
+      if (check_for_node(node_xsdata, "num_azimuthal")) then
+        call get_node_value(node_xsdata, "num_azimuthal", this % n_azi)
+      else
+        call fatal_error("num_azimuthal Must Be Provided!")
+      end if
+
+      ! Load angle data, if present (else equally spaced)
+      allocate(this % polar(this % n_pol))
+      allocate(this % azimuthal(this % n_azi))
+      if (check_for_node(node_xsdata, "polar")) then
+        call fatal_error("User-Specified polar angle bins not yet supported!")
+        ! When this feature is supported, this line will be activated
+        call get_node_array(node_xsdata, "polar", this % polar)
+      else
+        dangle = PI / real(this % n_pol,8)
+        do iangle = 1, this % n_pol
+          this % polar(iangle) = (real(iangle,8) - HALF) * dangle
+        end do
+      end if
+      if (check_for_node(node_xsdata, "azimuthal")) then
+        call fatal_error("User-Specified azimuthal angle bins not yet supported!")
+        ! When this feature is supported, this line will be activated
+        call get_node_array(node_xsdata, "azimuthal", this % azimuthal)
+      else
+        dangle = TWO * PI / real(this % n_azi,8)
+        do iangle = 1, this % n_azi
+          this % azimuthal(iangle) = -PI + (real(iangle,8) - HALF) * dangle
+        end do
+      end if
+
+      ! Load the more specific data
+      if (this % fissionable) then
+
+        if (check_for_node(node_xsdata, "chi")) then
+          ! Get chi
+          allocate(temp_arr(groups * this % n_azi * this % n_pol))
+          call get_node_array(node_xsdata, "chi", temp_arr)
+          allocate(this % chi(groups, this % n_azi, this % n_pol))
+          this % chi = reshape(temp_arr, (/groups, this % n_azi, this % n_pol/))
+          deallocate(temp_arr)
+
+          ! Get nu_fission (as a vector)
+          if (check_for_node(node_xsdata, "nu_fission")) then
+            allocate(temp_arr(groups * this % n_azi * this % n_pol))
+            call get_node_array(node_xsdata, "nu_fission", temp_arr)
+            allocate(this % nu_fission(groups, 1, this % n_azi, this % n_pol))
+            this % nu_fission = reshape(temp_arr, (/groups, 1, this % n_azi, &
+                                                    this % n_pol/))
+            deallocate(temp_arr)
+          else
+            call fatal_error("If fissionable, must provide nu_fission!")
+          end if
+
+        else
+          ! Get nu_fission (as a matrix)
+          if (check_for_node(node_xsdata, "nu_fission")) then
+
+            allocate(temp_arr(groups * this % n_azi * this % n_pol))
+            call get_node_array(node_xsdata, "nu_fission", temp_arr)
+            allocate(this % nu_fission(groups, groups, this % n_azi, this % n_pol))
+            this % nu_fission = reshape(temp_arr, (/groups, groups, &
+                                                    this % n_azi, this % n_pol/))
+            deallocate(temp_arr)
+          else
+            call fatal_error("If fissionable, must provide nu_fission!")
+          end if
+        end if
+        if (get_fiss) then
+          if (check_for_node(node_xsdata, "fission")) then
+            allocate(temp_arr(groups * this % n_azi * this % n_pol))
+            call get_node_array(node_xsdata, "fission", temp_arr)
+            allocate(this % fission(groups, this % n_azi, this % n_pol))
+            this % fission = reshape(temp_arr, (/groups, this % n_azi, this % n_pol/))
+            deallocate(temp_arr)
+          else
+            call fatal_error("Fission data missing, required due to fission&
+                             & tallies in tallies.xml file!")
+          end if
+        end if
+        if (get_kfiss) then
+          if (check_for_node(node_xsdata, "kappa_fission")) then
+            allocate(temp_arr(groups * this % n_azi * this % n_pol))
+            call get_node_array(node_xsdata, "kappa_fission", temp_arr)
+            allocate(this % k_fission(groups, this % n_azi, this % n_pol))
+            this % k_fission = reshape(temp_arr, (/groups, this % n_azi, this % n_pol/))
+            deallocate(temp_arr)
+          else
+            call fatal_error("kappa_fission data missing, required due to &
+                             &kappa-fission tallies in tallies.xml file!")
+          end if
+        end if
+      end if
+
+      if (check_for_node(node_xsdata, "absorption")) then
+        allocate(temp_arr(groups * this % n_azi * this % n_pol))
+        call get_node_array(node_xsdata, "absorption", temp_arr)
+        allocate(this % absorption(groups, this % n_azi, this % n_pol))
+        this % absorption = reshape(temp_arr, (/groups, this % n_azi, this % n_pol/))
+        deallocate(temp_arr)
+      else
+        call fatal_error("Must provide absorption!")
+      end if
+
+      allocate(this % scatter(groups, groups, order_dim, this % n_azi, this % n_pol))
+      if (check_for_node(node_xsdata, "scatter")) then
+        allocate(temp_arr(groups * groups * order_dim * this % n_azi * this%n_pol))
+        call get_node_array(node_xsdata, "scatter", temp_arr)
+        this % scatter = reshape(temp_arr, (/groups, groups, order_dim, &
+                                             this%n_azi,this%n_pol/))
+        deallocate(temp_arr)
+      else
+        call fatal_error("Must provide scatter!")
+      end if
+
+      if (check_for_node(node_xsdata, "total")) then
+        allocate(temp_arr(groups * this % n_azi * this % n_pol))
+        call get_node_array(node_xsdata, "total", temp_arr)
+        allocate(this % total(groups, this % n_azi, this % n_pol))
+        this % total = reshape(temp_arr, (/groups, this % n_azi, this % n_pol/))
+        deallocate(temp_arr)
+      else
+        this % total = this % absorption + sum(this%scatter(:,:,1,:,:),dim=1)
+      end if
+
+      ! Get Mult Data
+      allocate(this % mult(groups, groups, this % n_azi, this % n_pol))
+      if (check_for_node(node_xsdata, "multiplicity")) then
+        arr_len = get_arraysize_double(node_xsdata, "multiplicity")
+        if (arr_len == groups * groups * this % n_azi * this % n_pol) then
+          allocate(temp_arr(arr_len))
+          call get_node_array(node_xsdata, "multiplicity", temp_arr)
+          this % mult = reshape(temp_arr, (/groups, groups, this % n_azi, this % n_pol/))
+          deallocate(temp_arr)
+        else
+          call fatal_error("Multiplicity Length Does Not Match!")
+        end if
+      else
+        this % mult = ONE
+      end if
+
+    end subroutine nuclideangle_init
+
+!===============================================================================
+! NUCLIDECE_CLEAR resets and deallocates data in Nuclide, NuclideIso
+! or NuclideAngle
+!===============================================================================
+
+    subroutine nuclidece_clear(this)
+
+      class(NuclideCE), intent(inout) :: this ! The Nuclide object to clear
 
       integer :: i ! Loop counter
 
-      if (associated(this % nu_d_edist)) then
-        do i = 1, size(this % nu_d_edist)
-          call this % nu_d_edist(i) % clear()
-        end do
-        deallocate(this % nu_d_edist)
-      end if
-
-      if (associated(this % urr_data)) then
-        deallocate(this % urr_data)
-      end if
+      if (associated(this % urr_data)) deallocate(this % urr_data)
 
       if (allocated(this % reactions)) then
         do i = 1, size(this % reactions)
@@ -327,81 +704,21 @@ module nuclide_header
 
       call this % reaction_index % clear()
 
-    end subroutine nuclide_ce_clear
-
-    subroutine nuclide_iso_clear(this)
-
-      class(Nuclide_Iso), intent(inout) :: this ! The Nuclide object to clear
-
-      ! Cler the extended information
-      if (allocated(this % total)) then
-        deallocate(this % total, this % absorption, this % scatter)
-      end if
-      if (allocated(this % fission)) then
-        deallocate(this % fission, this % nu_fission)
-      end if
-      if (allocated(this % k_fission)) then
-        deallocate(this % k_fission)
-      end if
-      if (allocated(this % chi)) then
-        deallocate(this % chi)
-      end if
-      if (allocated(this % mult)) then
-        deallocate(this % mult)
-      end if
-
-    end subroutine nuclide_iso_clear
-
-    subroutine nuclide_angle_clear(this)
-
-      class(Nuclide_Angle), intent(inout) :: this ! The Nuclide object to clear
-
-      ! Cler the extended information
-      if (allocated(this % total)) then
-        deallocate(this % total, this % absorption, this % scatter)
-      end if
-      if (allocated(this % fission)) then
-        deallocate(this % fission, this % nu_fission)
-      end if
-      if (allocated(this % k_fission)) then
-        deallocate(this % k_fission)
-      end if
-      if (allocated(this % chi)) then
-        deallocate(this % chi)
-      end if
-
-      if (allocated(this % polar)) then
-        deallocate(this % polar)
-      end if
-      if (allocated(this % azimuthal)) then
-        deallocate(this % azimuthal)
-      end if
-      if (allocated(this % mult)) then
-        deallocate(this % mult)
-      end if
-
-    end subroutine nuclide_angle_clear
+    end subroutine nuclidece_clear
 
 !===============================================================================
-! PRINT_NUCLIDE_* displays information about a continuous-energy neutron
+! NUCLIDE*_PRINT displays information about a continuous-energy neutron
 ! cross_section table and its reactions and secondary angle/energy distributions
 !===============================================================================
 
-    subroutine nuclide_ce_print(this, unit)
-
-      class(Nuclide_CE), intent(in) :: this
-      integer, optional, intent(in) :: unit
+    subroutine nuclidece_print(this, unit)
+      class(NuclideCE), intent(in) :: this
+      integer, intent(in), optional :: unit
 
       integer :: i                 ! loop index over nuclides
       integer :: unit_             ! unit to write to
-      integer :: size_total        ! memory used by nuclide (bytes)
-      integer :: size_angle_total  ! total memory used for angle dist. (bytes)
-      integer :: size_energy_total ! total memory used for energy dist. (bytes)
       integer :: size_xs           ! memory used for cross-sections (bytes)
-      integer :: size_angle        ! memory used for an angle distribution (bytes)
-      integer :: size_energy       ! memory used for a  energy distributions (bytes)
       integer :: size_urr          ! memory used for probability tables (bytes)
-      character(11) :: law         ! secondary energy distribution law
       type(UrrData),  pointer :: urr
 
       ! set default unit for writing information
@@ -412,8 +729,6 @@ module nuclide_header
       end if
 
       ! Initialize totals
-      size_angle_total = 0
-      size_energy_total = 0
       size_urr = 0
       size_xs = 0
 
@@ -428,34 +743,15 @@ module nuclide_header
       write(unit_,*) '  # of reactions = ' // trim(to_str(this % n_reaction))
 
       ! Information on each reaction
-      write(unit_,*) '  Reaction     Q-value  COM  Law    IE    size(angle) size(energy)'
+      write(unit_,*) '  Reaction     Q-value  COM    IE'
       do i = 1, this % n_reaction
         associate (rxn => this % reactions(i))
-
-          ! Determine size of angle distribution
-          if (rxn % has_angle_dist) then
-            size_angle = rxn % adist % n_energy * 16 + size(rxn % adist % data) * 8
-          else
-            size_angle = 0
-          end if
-
-          ! Determine size of energy distribution and law
-          if (rxn % has_energy_dist) then
-            size_energy = size(rxn % edist % data) * 8
-            law = to_str(rxn % edist % law)
-          else
-            size_energy = 0
-            law = 'None'
-          end if
-
-          write(unit_,'(3X,A11,1X,F8.3,3X,L1,3X,A4,1X,I6,1X,I11,1X,I11)') &
+          write(unit_,'(3X,A11,1X,F8.3,3X,L1,3X,I6)') &
                reaction_name(rxn % MT), rxn % Q_value, rxn % scatter_in_cm, &
-               law(1:4), rxn % threshold, size_angle, size_energy
+               rxn % threshold
 
           ! Accumulate data size
           size_xs = size_xs + (this % n_grid - rxn%threshold + 1) * 8
-          size_angle_total = size_angle_total + size_angle
-          size_energy_total = size_energy_total + size_energy
         end associate
       end do
 
@@ -481,27 +777,18 @@ module nuclide_header
         size_urr = urr % n_energy * (urr % n_prob * 6 + 1) * 8
       end if
 
-      ! Calculate total memory
-      size_total = size_xs + size_angle_total + size_energy_total + size_urr
-
       ! Write memory used
       write(unit_,*) '  Memory Requirements'
       write(unit_,*) '    Cross sections = ' // trim(to_str(size_xs)) // ' bytes'
-      write(unit_,*) '    Secondary angle distributions = ' // &
-           trim(to_str(size_angle_total)) // ' bytes'
-      write(unit_,*) '    Secondary energy distributions = ' // &
-           trim(to_str(size_energy_total)) // ' bytes'
       write(unit_,*) '    Probability Tables = ' // &
            trim(to_str(size_urr)) // ' bytes'
-      write(unit_,*) '    Total = ' // trim(to_str(size_total)) // ' bytes'
 
       ! Blank line at end of nuclide
       write(unit_,*)
+    end subroutine nuclidece_print
 
-    end subroutine nuclide_ce_print
-
-    subroutine nuclide_mg_print(this, unit_)
-      class(Nuclide_MG), intent(in) :: this
+    subroutine nuclidemg_print(this, unit_)
+      class(NuclideMG), intent(in) :: this
       integer, intent(in)           :: unit_
 
       character(MAX_LINE_LEN) :: temp_str
@@ -531,11 +818,11 @@ module nuclide_header
       end if
       write(unit_,*) '  Fissionable = ', this % fissionable
 
-    end subroutine nuclide_mg_print
+    end subroutine nuclidemg_print
 
-    subroutine nuclide_iso_print(this, unit)
+    subroutine nuclideiso_print(this, unit)
 
-      class(Nuclide_Iso), intent(in) :: this
+      class(NuclideIso), intent(in) :: this
       integer, optional, intent(in)  :: unit
 
       integer :: unit_             ! unit to write to
@@ -549,7 +836,7 @@ module nuclide_header
       end if
 
       ! Write Basic Nuclide Information
-      call nuclide_mg_print(this, unit_)
+      call nuclidemg_print(this, unit_)
 
       ! Determine size of mgxs and scattering matrices
       size_scattmat = (size(this % scatter) + size(this % mult)) * 8
@@ -571,11 +858,11 @@ module nuclide_header
       ! Blank line at end of nuclide
       write(unit_,*)
 
-    end subroutine nuclide_iso_print
+    end subroutine nuclideiso_print
 
-    subroutine nuclide_angle_print(this, unit)
+    subroutine nuclideangle_print(this, unit)
 
-      class(Nuclide_Angle), intent(in) :: this
+      class(NuclideAngle), intent(in) :: this
       integer, optional, intent(in)    :: unit
 
       integer :: unit_             ! unit to write to
@@ -589,9 +876,9 @@ module nuclide_header
       end if
 
       ! Write Basic Nuclide Information
-      call nuclide_mg_print(this, unit_)
-      write(unit_,*) '  # of Polar Angles = ' // trim(to_str(this % Npol))
-      write(unit_,*) '  # of Azimuthal Angles = ' // trim(to_str(this % Nazi))
+      call nuclidemg_print(this, unit_)
+      write(unit_,*) '  # of Polar Angles = ' // trim(to_str(this % n_pol))
+      write(unit_,*) '  # of Azimuthal Angles = ' // trim(to_str(this % n_azi))
 
       ! Determine size of mgxs and scattering matrices
       size_scattmat = (size(this % scatter) + size(this % mult)) * 8
@@ -614,15 +901,15 @@ module nuclide_header
       write(unit_,*)
 
 
-    end subroutine nuclide_angle_print
+    end subroutine nuclideangle_print
 
 !===============================================================================
-! NUCLIDE_*_GET_XS Returns the requested data type
+! NUCLIDE*_GET_XS Returns the requested data type
 !===============================================================================
 
-    function nuclide_iso_get_xs(this, g, xstype, gout, uvw, mu, i_azi, i_pol) &
+    function nuclideiso_get_xs(this, g, xstype, gout, uvw, mu, i_azi, i_pol) &
          result(xs)
-      class(Nuclide_Iso), intent(in) :: this
+      class(NuclideIso), intent(in) :: this
       integer, intent(in)            :: g      ! Incoming Energy group
       character(*), intent(in)       :: xstype ! Cross Section Type
       integer, optional, intent(in)  :: gout   ! Outgoing Group
@@ -669,11 +956,11 @@ module nuclide_header
           xs = this % total(g) - this % absorption(g)
         end select
       end if
-    end function nuclide_iso_get_xs
+    end function nuclideiso_get_xs
 
-    function nuclide_angle_get_xs(this, g, xstype, gout, uvw, mu, i_azi, i_pol) &
+    function nuclideangle_get_xs(this, g, xstype, gout, uvw, mu, i_azi, i_pol) &
          result(xs)
-      class(Nuclide_Angle), intent(in) :: this
+      class(NuclideAngle), intent(in) :: this
       integer, intent(in)              :: g      ! Incoming Energy group
       character(*), intent(in)         :: xstype ! Cross Section Type
       integer, optional, intent(in)    :: gout   ! Outgoing Group
@@ -732,15 +1019,16 @@ module nuclide_header
         end select
       end if
 
-    end function nuclide_angle_get_xs
+    end function nuclideangle_get_xs
 
 !===============================================================================
-! NUCLIDE_*_CALC_F Finds the value of f(mu), the scattering probability, given mu
+! NUCLIDE*_CALC_F Finds the value of f(mu), the scattering angle probability,
+! given mu
 !===============================================================================
 
-  pure function nuclide_mg_iso_calc_f(this, gin, gout, mu, uvw, i_azi, i_pol) &
-       result(f)
-      class(Nuclide_Iso), intent(in) :: this
+    pure function nuclideiso_calc_f(this, gin, gout, mu, uvw, i_azi, i_pol) &
+         result(f)
+      class(NuclideIso), intent(in) :: this
       integer, intent(in)            :: gin  ! Incoming Energy Group
       integer, intent(in)            :: gout ! Outgoing Energy Group
       real(8), intent(in)            :: mu   ! Angle of interest
@@ -755,7 +1043,7 @@ module nuclide_header
       if (this % scatt_type == ANGLE_LEGENDRE) then
         f = evaluate_legendre(this % scatter(gout,gin,:), mu)
       else if (this % scatt_type == ANGLE_TABULAR) then
-        dmu = TWO / (real(this % order) - 1)
+        dmu = TWO / real(this % order - 1)
         ! Find mu bin algebraically, knowing that the spacing is equal
         f   = (mu + ONE) / dmu + ONE
         imu = floor(f)
@@ -783,11 +1071,11 @@ module nuclide_header
 
       end if
 
-    end function nuclide_mg_iso_calc_f
+    end function nuclideiso_calc_f
 
-    pure function nuclide_mg_angle_calc_f(this, gin, gout, mu, uvw, i_azi, &
+    pure function nuclideangle_calc_f(this, gin, gout, mu, uvw, i_azi, &
                                           i_pol) result(f)
-      class(Nuclide_Angle), intent(in) :: this
+      class(NuclideAngle), intent(in) :: this
       integer, intent(in)              :: gin  ! Incoming Energy Group
       integer, intent(in)              :: gout ! Outgoing Energy Group
       real(8), intent(in)              :: mu   ! Angle of interest
@@ -809,7 +1097,7 @@ module nuclide_header
       if (this % scatt_type == ANGLE_LEGENDRE) then
         f = evaluate_legendre(this % scatter(gout,gin,:,i_azi_,i_pol_), mu)
       else if (this % scatt_type == ANGLE_TABULAR) then
-        dmu = TWO / (real(this % order) - 1)
+        dmu = TWO / real(this % order - 1)
         ! Find mu bin algebraically, knowing that the spacing is equal
         f   = (mu + ONE) / dmu + ONE
         imu = floor(f)
@@ -837,7 +1125,8 @@ module nuclide_header
 
       end if
 
-    end function nuclide_mg_angle_calc_f
+    end function nuclideangle_calc_f
+
 !===============================================================================
 ! find_angle finds the closest angle on the data grid and returns that index
 !===============================================================================
@@ -857,9 +1146,9 @@ module nuclide_header
       my_azi = atan2(uvw(2), uvw(1))
 
       ! Search for equi-binned angles
-      dangle = PI / (real(size(polar),8))
+      dangle = PI / real(size(polar),8)
       i_pol  = floor(my_pol / dangle + ONE)
-      dangle = TWO * PI / (real(size(azimuthal),8))
+      dangle = TWO * PI / real(size(azimuthal),8)
       i_azi  = floor((my_azi + PI) / dangle + ONE)
 
     end subroutine find_angle

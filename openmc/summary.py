@@ -1,3 +1,4 @@
+from collections import Iterable
 import numpy as np
 import re
 
@@ -60,7 +61,7 @@ class Summary(object):
         self.date_and_time = self._f['date_and_time'][...]
 
         # Read if continuous-energy or multi-group
-        self.run_CE = bool(self._f['run_CE'].value)
+        self.run_CE = (self._f['run_CE'].value == 1)
 
         self.n_batches = self._f['n_batches'].value
         self.n_particles = self._f['n_particles'].value
@@ -275,6 +276,11 @@ class Summary(object):
                 cell.region = Region.from_expression(
                     region, {s.id: s for s in self.surfaces.values()})
 
+            # Get the distribcell index
+            ind = self._f['geometry/cells'][key]['distribcell_index'].value
+            if ind != 0:
+               cell.distribcell_index = ind
+
             # Add the Cell to the global dictionary of all Cells
             self.cells[index] = cell
 
@@ -333,11 +339,8 @@ class Summary(object):
                      self._f['geometry/lattices'][key]['lower_left'][...]
                 pitch = self._f['geometry/lattices'][key]['pitch'][...]
                 outer = self._f['geometry/lattices'][key]['outer'].value
-
                 universe_ids = \
-                     self._f['geometry/lattices'][key]['universes'][...]
-                universe_ids = np.swapaxes(universe_ids, 0, 1)
-                universe_ids = np.swapaxes(universe_ids, 1, 2)
+                    self._f['geometry/lattices'][key]['universes'][...]
 
                 # Create the Lattice
                 lattice = openmc.RectLattice(lattice_id=lattice_id, name=name)
@@ -353,22 +356,22 @@ class Summary(object):
                 universes = \
                     np.ndarray(tuple(universe_ids.shape), dtype=openmc.Universe)
 
-                for x in range(universe_ids.shape[0]):
+                for z in range(universe_ids.shape[0]):
                     for y in range(universe_ids.shape[1]):
-                        for z in range(universe_ids.shape[2]):
-                            universes[x, y, z] = \
-                                 self.get_universe_by_id(universe_ids[x, y, z])
+                        for x in range(universe_ids.shape[2]):
+                            universes[z, y, x] = \
+                                 self.get_universe_by_id(universe_ids[z, y, x])
 
-                # Transpose, reverse y-dimension for appropriate ordering
-                shape = universes.shape
-                universes = np.transpose(universes, (1, 0, 2))
-                universes.shape = shape
-                universes = universes[:, ::-1, :]
+                # Use 2D NumPy array to store lattice universes for 2D lattices
+                if len(dimension) == 2:
+                    universes = np.squeeze(universes)
+                    universes = np.atleast_2d(universes)
+
+                # Set the universes for the lattice
                 lattice.universes = universes
 
+                # Set the distribcell offsets for the lattice
                 if offsets is not None:
-                    offsets = np.swapaxes(offsets, 0, 1)
-                    offsets = np.swapaxes(offsets, 1, 2)
                     lattice.offsets = offsets
 
                 # Add the Lattice to the global dictionary of all Lattices
@@ -478,10 +481,14 @@ class Summary(object):
 
             # Retrieve the object corresponding to the fill type and ID
             if fill_type == 'normal':
-                if fill_id > 0:
-                    fill = self.get_material_by_id(fill_id)
+                if isinstance(fill_id, Iterable):
+                    fill = [self.get_material_by_id(mat) if mat > 0 else 'void'
+                            for mat in fill_id]
                 else:
-                    fill = 'void'
+                    if fill_id > 0:
+                        fill = self.get_material_by_id(fill_id)
+                    else:
+                        fill = 'void'
             elif fill_type == 'universe':
                 fill = self.get_universe_by_id(fill_id)
             else:
@@ -524,7 +531,7 @@ class Summary(object):
             # Create Tally object and assign basic properties
             tally = openmc.Tally(tally_id, tally_name)
 
-            # Read scattering moment order strings (e.g., P3, Y-1,2, etc.)
+            # Read scattering moment order strings (e.g., P3, Y1,2, etc.)
             moments = self._f['{0}/moment_orders'.format(subbase)].value
 
             # Read score metadata
@@ -535,7 +542,6 @@ class Summary(object):
                 # If this is a moment, use generic moment order
                 pattern = r'-n$|-pn$|-yn$'
                 score = re.sub(pattern, '-' + moments[j].decode(), score)
-
                 tally.add_score(score)
 
             # Read filter metadata
@@ -553,11 +559,11 @@ class Summary(object):
                 bins = self._f['{0}/bins'.format(subsubbase)][...]
 
                 # Create Filter object
-                filter = openmc.Filter(filter_type, bins)
-                filter.num_bins = num_bins
+                new_filter = openmc.Filter(filter_type, bins)
+                new_filter.num_bins = num_bins
 
                 # Add Filter to the Tally
-                tally.add_filter(filter)
+                tally.add_filter(new_filter)
 
             # Add Tally to the global dictionary of all Tallies
             self.tallies[tally_id] = tally

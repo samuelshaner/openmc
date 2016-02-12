@@ -90,14 +90,14 @@ module particle_header
     logical    :: write_track = .false.
 
     ! Secondary particles created
-    integer    :: n_secondary = 0
+    integer(8) :: n_secondary = 0
     type(Bank) :: secondary_bank(MAX_SECONDARY)
 
   contains
-    procedure, pass :: initialize => initialize_particle
-    procedure, pass :: clear => clear_particle
-    procedure, pass :: initialize_from_source => initialize_from_source
-    procedure, pass :: create_secondary => create_secondary
+    procedure :: initialize => initialize_particle
+    procedure :: clear => clear_particle
+    procedure :: initialize_from_source
+    procedure :: create_secondary
   end type Particle
 
 contains
@@ -132,7 +132,6 @@ contains
     this % fission           = .false.
     this % delayed_group     = 0
     this % n_delayed_bank(:) = 0
-    ! Initialize this % g so there is always at least some initialized value
     this % g = 1
 
     ! Set up base level coordinates

@@ -1,4 +1,6 @@
 import openmc
+from openmc.source import Source
+from openmc.stats import Box
 
 
 class InputSet(object):
@@ -558,7 +560,8 @@ class InputSet(object):
         self.settings.batches = 10
         self.settings.inactive = 5
         self.settings.particles = 100
-        self.settings.set_source_space('box', (-160, -160, -183, 160, 160, 183))
+        self.settings.source = Source(space=Box(
+            [-160, -160, -183], [160, 160, 183]))
 
     def build_defualt_plots(self):
         plot = openmc.Plot()
@@ -638,7 +641,8 @@ class MGInputSet(InputSet):
         self.settings.batches = 10
         self.settings.inactive = 5
         self.settings.particles = 100
-        self.settings.set_source_space('box', (0.0, 0.0, 0.0, 10.0, 10.0, 2.0))
+        self.settings.source = Source(space=Box([0.0, 0.0, 0.0],
+                                                [10.0, 10.0, 2.0]))
         self.settings.energy_mode = "multi-group"
         self.settings.cross_sections = "../1d_mgxs.xml"
 

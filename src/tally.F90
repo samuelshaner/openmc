@@ -13,7 +13,7 @@ module tally
   use output,           only: header
   use particle_header,  only: LocalCoord, Particle
   use search,           only: binary_search
-  use simple_string,    only: to_str
+  use string,           only: to_str
   use tally_header,     only: TallyResult, TallyMapItem, TallyMapElement
   use fission,          only: nu_total, nu_delayed, yield_delayed
   use interpolation,    only: interpolate_tab1
@@ -25,6 +25,8 @@ module tally
   implicit none
 
   integer :: position(N_FILTER_TYPES - 3) = 0 ! Tally map positioning array
+
+!$omp threadprivate(position)
 
   procedure(score_general_intfc),    pointer :: score_general => null()
   procedure(get_scoring_bins_intfc), pointer :: get_scoring_bins => null()
@@ -51,8 +53,6 @@ module tally
     end subroutine get_scoring_bins_intfc
 
   end interface
-
-!$omp threadprivate(position)
 
 contains
 
@@ -778,7 +778,6 @@ contains
           end if
         end if
 
-
       end select
 
       !#########################################################################
@@ -807,6 +806,14 @@ contains
     real(8) :: macro_total          ! material macro total xs
     real(8) :: macro_scatt          ! material macro scatt xs
     real(8) :: micro_abs            ! nuclidic microscopic abs
+    real(8) :: p_uvw(3)             ! Particle's current uvw
+
+    ! Set the direction, if needed for nuclidic data, so that nuc % get_xs
+    ! knows wihch direction it should be using for direction-dependent
+    ! mgxs
+    if (i_nuclide > 0) then
+      p_uvw = p % coord(p % n_coord) % uvw
+    end if
 
     i = 0
     SCORE_LOOP: do q = 1, t % n_user_score_bins
@@ -860,7 +867,7 @@ contains
         else
           if (i_nuclide > 0) then
             associate (nuc => nuclides_MG(i_nuclide) % obj)
-              score = nuc % get_xs(p % g, 'total', UVW=p % coord(i) % uvw) * &
+              score = nuc % get_xs(p % g, 'total', UVW=p_uvw) * &
                    atom_density * flux
             end associate
           else
@@ -902,7 +909,7 @@ contains
           ! Note SCORE_SCATTER_N not available for tracklength/collision.
           if (i_nuclide > 0) then
             associate (nuc => nuclides_MG(i_nuclide) % obj)
-              score = nuc % get_xs(p % g, 'scatter', UVW=p % coord(i) % uvw) * &
+              score = nuc % get_xs(p % g, 'scatter', UVW=p_uvw) * &
                    atom_density * flux
             end associate
           else
@@ -1069,7 +1076,7 @@ contains
         else
           if (i_nuclide > 0) then
             associate (nuc => nuclides_MG(i_nuclide) % obj)
-              score = nuc % get_xs(p % g, 'absorption', UVW=p % coord(i) % uvw) &
+              score = nuc % get_xs(p % g, 'absorption', UVW=p_uvw) &
                    * atom_density * flux
             end associate
           else
@@ -1085,10 +1092,10 @@ contains
             ! calculate fraction of absorptions that would have resulted in
             ! fission
             associate (nuc => nuclides_MG(i_nuclide) % obj)
-              micro_abs = nuc % get_xs(p % g, 'absorption', UVW=p % coord(i) % uvw)
+              micro_abs = nuc % get_xs(p % g, 'absorption', UVW=p_uvw)
               if (micro_abs > ZERO) then
                 score = p % absorb_wgt * &
-                     nuc % get_xs(p % g, 'fission', UVW=p % coord(i) % uvw) &
+                     nuc % get_xs(p % g, 'fission', UVW=p_uvw) &
                      / micro_abs
               else
                 score = ZERO
@@ -1102,20 +1109,20 @@ contains
             ! fission reaction rate
             associate (nuc => nuclides_MG(i_nuclide) % obj)
               score = p % last_wgt &
-                   * nuc % get_xs(p % g, 'fission', UVW=p % coord(i) % uvw) &
-                   / nuc % get_xs(p % g, 'absorption', UVW=p % coord(i) % uvw)
+                   * nuc % get_xs(p % g, 'fission', UVW=p_uvw) &
+                   / nuc % get_xs(p % g, 'absorption', UVW=p_uvw)
             end associate
           end if
 
         else
           if (i_nuclide > 0) then
             associate (nuc => nuclides_MG(i_nuclide) % obj)
-              score = nuc % get_xs(p % g, 'fission', UVW=p % coord(i) % uvw) * &
+              score = nuc % get_xs(p % g, 'fission', UVW=p_uvw) * &
                    atom_density * flux
             end associate
           else
             score = flux * macro_xs(p % material) % obj % get_xs(p % g, &
-                 'fission', UVW=p % coord(i) % uvw)
+                 'fission', UVW=p_uvw)
 
           end if
         end if
@@ -1139,10 +1146,10 @@ contains
             ! calculate fraction of absorptions that would have resulted in
             ! nu-fission
             associate (nuc => nuclides_MG(i_nuclide) % obj)
-              micro_abs = nuc % get_xs(p % g, 'absorption', UVW=p % coord(i) % uvw)
+              micro_abs = nuc % get_xs(p % g, 'absorption', UVW=p_uvw)
               if (micro_abs > ZERO) then
                 score = p % absorb_wgt * &
-                     nuc % get_xs(p % g, 'fission', UVW=p % coord(i) % uvw) / &
+                     nuc % get_xs(p % g, 'fission', UVW=p_uvw) / &
                      micro_abs
               else
                 score = ZERO
@@ -1162,7 +1169,7 @@ contains
         else
           if (i_nuclide > 0) then
             associate (nuc => nuclides_MG(i_nuclide) % obj)
-              score = nuc % get_xs(p % g, 'nu_fission', UVW=p % coord(i) % uvw) &
+              score = nuc % get_xs(p % g, 'nu_fission', UVW=p_uvw) &
                    * atom_density * flux
           end associate
           else
@@ -1180,10 +1187,10 @@ contains
             ! calculate fraction of absorptions that would have resulted in
             ! fission scale by kappa-fission
             associate (nuc => nuclides_MG(i_nuclide) % obj)
-              micro_abs = nuc % get_xs(p % g, 'absorption', UVW=p % coord(i) % uvw)
+              micro_abs = nuc % get_xs(p % g, 'absorption', UVW=p_uvw)
               if (micro_abs > ZERO) then
                 score = p % absorb_wgt * &
-                     nuc % get_xs(p % g, 'k_fission', UVW=p % coord(i) % uvw) / &
+                     nuc % get_xs(p % g, 'k_fission', UVW=p_uvw) / &
                      micro_abs
               end if
             end associate
@@ -1195,20 +1202,20 @@ contains
             ! the fission energy production rate
             associate (nuc => nuclides_MG(i_nuclide) % obj)
               score = p % last_wgt * &
-                   nuc % get_xs(p % g, 'k_fission', UVW=p % coord(i) % uvw) / &
-                   nuc % get_xs(p % g, 'absorption', UVW=p % coord(i) % uvw)
+                   nuc % get_xs(p % g, 'k_fission', UVW=p_uvw) / &
+                   nuc % get_xs(p % g, 'absorption', UVW=p_uvw)
             end associate
           end if
 
         else
           if (i_nuclide > 0) then
             associate (nuc => nuclides_MG(i_nuclide) % obj)
-              score = nuc % get_xs(p % g, 'k_fission', UVW=p % coord(i) % uvw) &
+              score = nuc % get_xs(p % g, 'k_fission', UVW=p_uvw) &
                    * atom_density * flux
             end associate
           else
             score = flux * macro_xs(p % material) % obj % get_xs(p % g, &
-                 'k_fission', UVW=p % coord(i) % uvw)
+                 'k_fission', UVW=p_uvw)
           end if
         end if
 
@@ -1248,97 +1255,95 @@ contains
     real(8) :: uvw(3)
 
     select case(score_bin)
-
-
-      case (SCORE_SCATTER_N, SCORE_NU_SCATTER_N)
-        ! Find the scattering order for a singly requested moment, and
-        ! store its moment contribution.
-        if (t % moment_order(i) == 1) then
-          score = score * p % mu ! avoid function call overhead
-        else
-          score = score * calc_pn(t % moment_order(i), p % mu)
-        endif
+    case (SCORE_SCATTER_N, SCORE_NU_SCATTER_N)
+      ! Find the scattering order for a singly requested moment, and
+      ! store its moment contribution.
+      if (t % moment_order(i) == 1) then
+        score = score * p % mu ! avoid function call overhead
+      else
+        score = score * calc_pn(t % moment_order(i), p % mu)
+      endif
 !$omp atomic
-        t % results(score_index, filter_index) % value = &
-             t % results(score_index, filter_index) % value + score
+      t % results(score_index, filter_index) % value = &
+           t % results(score_index, filter_index) % value + score
 
 
-      case(SCORE_SCATTER_YN, SCORE_NU_SCATTER_YN)
-        score_index = score_index - 1
-        num_nm = 1
-        ! Find the order for a collection of requested moments
-        ! and store the moment contribution of each
-        do n = 0, t % moment_order(i)
-          ! determine scoring bin index
-          score_index = score_index + num_nm
-          ! Update number of total n,m bins for this n (m = [-n: n])
-          num_nm = 2 * n + 1
+    case(SCORE_SCATTER_YN, SCORE_NU_SCATTER_YN)
+      score_index = score_index - 1
+      num_nm = 1
+      ! Find the order for a collection of requested moments
+      ! and store the moment contribution of each
+      do n = 0, t % moment_order(i)
+        ! determine scoring bin index
+        score_index = score_index + num_nm
+        ! Update number of total n,m bins for this n (m = [-n: n])
+        num_nm = 2 * n + 1
 
-          ! multiply score by the angular flux moments and store
+        ! multiply score by the angular flux moments and store
 !$omp critical (score_general_scatt_yn)
-          t % results(score_index: score_index + num_nm - 1, filter_index) &
-               % value = t &
-               % results(score_index: score_index + num_nm - 1, filter_index)&
-               % value &
-               + score * calc_pn(n, p % mu) * calc_rn(n, p % last_uvw)
+        t % results(score_index: score_index + num_nm - 1, filter_index) &
+             % value = t &
+             % results(score_index: score_index + num_nm - 1, filter_index)&
+             % value &
+             + score * calc_pn(n, p % mu) * calc_rn(n, p % last_uvw)
 !$omp end critical (score_general_scatt_yn)
-        end do
-        i = i + (t % moment_order(i) + 1)**2 - 1
+      end do
+      i = i + (t % moment_order(i) + 1)**2 - 1
 
 
-      case(SCORE_FLUX_YN, SCORE_TOTAL_YN)
-        score_index = score_index - 1
-        num_nm = 1
-        if (t % estimator == ESTIMATOR_ANALOG .or. &
-             t % estimator == ESTIMATOR_COLLISION) then
-          uvw = p % last_uvw
-        else if (t % estimator == ESTIMATOR_TRACKLENGTH) then
-          uvw = p % coord(1) % uvw
-        end if
-        ! Find the order for a collection of requested moments
-        ! and store the moment contribution of each
-        do n = 0, t % moment_order(i)
-          ! determine scoring bin index
-          score_index = score_index + num_nm
-          ! Update number of total n,m bins for this n (m = [-n: n])
-          num_nm = 2 * n + 1
+    case(SCORE_FLUX_YN, SCORE_TOTAL_YN)
+      score_index = score_index - 1
+      num_nm = 1
+      if (t % estimator == ESTIMATOR_ANALOG .or. &
+           t % estimator == ESTIMATOR_COLLISION) then
+        uvw = p % last_uvw
+      else if (t % estimator == ESTIMATOR_TRACKLENGTH) then
+        uvw = p % coord(1) % uvw
+      end if
+      ! Find the order for a collection of requested moments
+      ! and store the moment contribution of each
+      do n = 0, t % moment_order(i)
+        ! determine scoring bin index
+        score_index = score_index + num_nm
+        ! Update number of total n,m bins for this n (m = [-n: n])
+        num_nm = 2 * n + 1
 
-          ! multiply score by the angular flux moments and store
+        ! multiply score by the angular flux moments and store
 !$omp critical (score_general_flux_tot_yn)
-          t % results(score_index: score_index + num_nm - 1, filter_index) &
-               % value = t &
-               % results(score_index: score_index + num_nm - 1, filter_index)&
-               % value &
-               + score * calc_rn(n, uvw)
+        t % results(score_index: score_index + num_nm - 1, filter_index) &
+             % value = t &
+             % results(score_index: score_index + num_nm - 1, filter_index)&
+             % value &
+             + score * calc_rn(n, uvw)
 !$omp end critical (score_general_flux_tot_yn)
-        end do
-        i = i + (t % moment_order(i) + 1)**2 - 1
+      end do
+      i = i + (t % moment_order(i) + 1)**2 - 1
 
 
-      case (SCORE_SCATTER_PN, SCORE_NU_SCATTER_PN)
-        score_index = score_index - 1
-        ! Find the scattering order for a collection of requested moments
-        ! and store the moment contribution of each
-        do n = 0, t % moment_order(i)
-          ! determine scoring bin index
-          score_index = score_index + 1
+    case (SCORE_SCATTER_PN, SCORE_NU_SCATTER_PN)
+      score_index = score_index - 1
+      ! Find the scattering order for a collection of requested moments
+      ! and store the moment contribution of each
+      do n = 0, t % moment_order(i)
+        ! determine scoring bin index
+        score_index = score_index + 1
 
-          ! get the score and tally it
-!$omp atomic
-          t % results(score_index, filter_index) % value = &
-               t % results(score_index, filter_index) % value &
-               + score * calc_pn(n, p % mu)
-        end do
-        i = i + t % moment_order(i)
-
-
-      case default
+        ! get the score and tally it
 !$omp atomic
         t % results(score_index, filter_index) % value = &
-             t % results(score_index, filter_index) % value + score
+             t % results(score_index, filter_index) % value &
+             + score * calc_pn(n, p % mu)
+      end do
+      i = i + t % moment_order(i)
 
 
-      end select
+    case default
+!$omp atomic
+      t % results(score_index, filter_index) % value = &
+           t % results(score_index, filter_index) % value + score
+
+
+    end select
 
   end subroutine expand_and_score
 
@@ -2276,6 +2281,7 @@ contains
     integer :: j
     integer :: n ! number of bins for single filter
     integer :: offset ! offset for distribcell
+    integer :: distribcell_index ! index in distribcell arrays
     real(8) :: E ! particle energy
     real(8) :: theta, phi ! Polar and Azimuthal Angles, respectively
     type(TallyObject), pointer :: t
@@ -2320,12 +2326,14 @@ contains
 
       case (FILTER_DISTRIBCELL)
         ! determine next distribcell bin
+        distribcell_index = cells(t % filters(i) % int_bins(1)) &
+                                  % distribcell_index
         matching_bins(i) = NO_BIN_FOUND
         offset = 0
         do j = 1, p % n_coord
           if (cells(p % coord(j) % cell) % type == CELL_FILL) then
             offset = offset + cells(p % coord(j) % cell) % &
-                 offset(t % filters(i) % offset)
+                 offset(distribcell_index)
           elseif(cells(p % coord(j) % cell) % type == CELL_LATTICE) then
             if (lattices(p % coord(j + 1) % lattice) % obj &
                  % are_valid_indices([&
@@ -2333,7 +2341,7 @@ contains
                  p % coord(j + 1) % lattice_y, &
                  p % coord(j + 1) % lattice_z])) then
               offset = offset + lattices(p % coord(j + 1) % lattice) % obj % &
-                   offset(t % filters(i) % offset, &
+                   offset(distribcell_index, &
                    p % coord(j + 1) % lattice_x, &
                    p % coord(j + 1) % lattice_y, &
                    p % coord(j + 1) % lattice_z)
@@ -2480,6 +2488,7 @@ contains
     integer :: i ! loop index for filters
     integer :: j
     integer :: n ! number of bins for single filter
+    integer :: distribcell_index ! index in distribcell arrays
     integer :: offset ! offset for distribcell
     real(8) :: theta, phi ! Polar and Azimuthal Angles, respectively
     real(8) :: E
@@ -2525,12 +2534,14 @@ contains
 
       case (FILTER_DISTRIBCELL)
         ! determine next distribcell bin
+        distribcell_index = cells(t % filters(i) % int_bins(1)) &
+                                  % distribcell_index
         matching_bins(i) = NO_BIN_FOUND
         offset = 0
         do j = 1, p % n_coord
           if (cells(p % coord(j) % cell) % type == CELL_FILL) then
             offset = offset + cells(p % coord(j) % cell) % &
-                 offset(t % filters(i) % offset)
+                 offset(distribcell_index)
           elseif(cells(p % coord(j) % cell) % type == CELL_LATTICE) then
             if (lattices(p % coord(j + 1) % lattice) % obj &
                  % are_valid_indices([&
@@ -2538,7 +2549,7 @@ contains
                  p % coord(j + 1) % lattice_y, &
                  p % coord(j + 1) % lattice_z])) then
               offset = offset + lattices(p % coord(j + 1) % lattice) % obj % &
-                   offset(t % filters(i) % offset, &
+                   offset(distribcell_index, &
                    p % coord(j + 1) % lattice_x, &
                    p % coord(j + 1) % lattice_y, &
                    p % coord(j + 1) % lattice_z)

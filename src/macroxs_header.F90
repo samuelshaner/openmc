@@ -14,27 +14,21 @@ module macroxs_header
 ! particle is traveling through
 !===============================================================================
 
-  type, abstract :: MacroXS_Base
+  type, abstract :: MacroXS
     ! Data Order
     integer :: order
 
-    ! Type-Bound procedures
-    contains
-      procedure(macroxs_init_),   deferred, pass :: init     ! initializes object
-      procedure(macroxs_clear_),  deferred, pass :: clear    ! Deallocates object
-      procedure(macroxs_get_xs_), deferred, pass :: get_xs   ! Return xs
-  end type MacroXS_Base
+  contains
+    procedure(macroxs_init_),   deferred :: init     ! initializes object
+    procedure(macroxs_get_xs_), deferred :: get_xs   ! Return xs
+  end type MacroXS
 
   abstract interface
     subroutine macroxs_init_(this, mat, nuclides, groups, get_kfiss, get_fiss, &
                              max_order, scatt_type, legendre_mu_points, &
                              error_code, error_text)
-
-      import MacroXS_Base
-      import Material
-      import NuclideMGContainer
-      import MAX_LINE_LEN
-      class(MacroXS_Base), intent(inout)   :: this ! The MacroXS to initialize
+      import MacroXS, Material, NuclideMGContainer, MAX_LINE_LEN
+      class(MacroXS), intent(inout)        :: this ! The MacroXS to initialize
       type(Material), pointer, intent(in)  :: mat  ! base material
       type(NuclideMGContainer), intent(in) :: nuclides(:) ! List of nuclides to harvest from
       integer, intent(in)                  :: groups ! Number of E groups
@@ -45,48 +39,36 @@ module macroxs_header
       integer, intent(in)                  :: legendre_mu_points ! Treat as Leg or Tabular?
       integer, intent(inout)               :: error_code  ! Code signifying error
       character(MAX_LINE_LEN), intent(inout) :: error_text ! Error message to print
-
     end subroutine macroxs_init_
 
     function macroxs_get_xs_(this, g, xstype, gout, uvw) result(xs)
-      import MacroXS_Base
-      class(MacroXS_Base), intent(in) :: this   ! The MacroXS to initialize
+      import MacroXS
+      class(MacroXS), intent(in)      :: this   ! The MacroXS to initialize
       integer, intent(in)             :: g      ! Incoming Energy group
       character(*) , intent(in)       :: xstype ! Cross Section Type
       integer, optional, intent(in)   :: gout   ! Outgoing Energy group
       real(8), optional, intent(in)   :: uvw(3) ! Requested Angle
       real(8)                         :: xs     ! Resultant xs
-
     end function macroxs_get_xs_
-
-    subroutine macroxs_clear_(this)
-
-      import MacroXS_Base
-      class(MacroXS_Base), intent(inout) :: this ! The MacroXS to clear
-
-    end subroutine macroxs_clear_
-
   end interface
 
-  type, extends(MacroXS_Base) :: MacroXS_Iso
+  type, extends(MacroXS) :: MacroXSIso
     ! Microscopic cross sections
     real(8), allocatable :: total(:)      ! total cross section
     real(8), allocatable :: absorption(:) ! absorption cross section
-    class(ScattData_Base), allocatable :: scatter ! scattering information
+    class(ScattData), allocatable :: scatter ! scattering information
     real(8), allocatable :: nu_fission(:) ! nu-fission
     real(8), allocatable :: k_fission(:)  ! kappa-fission
     real(8), allocatable :: fission(:)    ! fission x/s
     real(8), allocatable :: scattxs(:)    ! scattering xs
     real(8), allocatable :: chi(:,:)      ! fission spectra
 
-    ! Type-Bound procedures
-    contains
-      procedure, pass :: init        => macroxs_iso_init        ! inits object
-      procedure, pass :: clear       => macroxs_iso_clear       ! Deallocates object
-      procedure, pass :: get_xs      => macroxs_iso_get_xs      ! Returns xs
-  end type MacroXS_Iso
+  contains
+    procedure :: init        => macroxsiso_init        ! inits object
+    procedure :: get_xs      => macroxsiso_get_xs      ! Returns xs
+  end type MacroXSIso
 
-  type, extends(MacroXS_Base) :: MacroXS_Angle
+  type, extends(MacroXS) :: MacroXSAngle
     ! Macroscopic cross sections
     real(8), allocatable :: total(:,:,:)      ! total cross section
     real(8), allocatable :: absorption(:,:,:) ! absorption cross section
@@ -99,19 +81,17 @@ module macroxs_header
     real(8), allocatable :: polar(:)          ! polar angles
     real(8), allocatable :: azimuthal(:)      ! azimuthal angles
 
-    ! Type-Bound procedures
-    contains
-      procedure, pass :: init     => macroxs_angle_init   ! inits object
-      procedure, pass :: clear    => macroxs_angle_clear  ! Deallocates object
-      procedure, pass :: get_xs   => macroxs_angle_get_xs ! Returns xs
-  end type MacroXS_Angle
+  contains
+    procedure :: init     => macroxsangle_init   ! inits object
+    procedure :: get_xs   => macroxsangle_get_xs ! Returns xs
+  end type MacroXSAngle
 
 !===============================================================================
 ! MACROXSCONTAINER pointer array for storing MacroXS objects.
 !===============================================================================
 
   type MacroXSContainer
-    class(MacroXS_Base), allocatable :: obj
+    class(MacroXS), allocatable :: obj
   end type MacroXSContainer
 
 contains
@@ -120,10 +100,9 @@ contains
 ! MACROXS*_INIT sets the MacroXS Data
 !===============================================================================
 
-  subroutine macroxs_iso_init(this, mat, nuclides, groups, get_kfiss, get_fiss, &
+  subroutine macroxsiso_init(this, mat, nuclides, groups, get_kfiss, get_fiss, &
        max_order, scatt_type, legendre_mu_points, error_code, error_text)
-
-    class(MacroXS_Iso), intent(inout)    :: this ! The MacroXS to initialize
+    class(MacroXSIso), intent(inout)     :: this ! The MacroXS to initialize
     type(Material), pointer, intent(in)  :: mat  ! base material
     type(NuclideMGContainer), intent(in) :: nuclides(:) ! List of nuclides to harvest from
     integer, intent(in)                  :: groups ! Number of E groups
@@ -138,7 +117,6 @@ contains
     integer :: i             ! loop index over nuclides
     integer :: gin, gout     ! group indices
     real(8) :: atom_density  ! atom density of a nuclide
-    ! class(Nuclide_Base), pointer  :: nuc ! current nuclide
     integer :: imu
     real(8) :: norm
     integer :: mat_max_order, order, l
@@ -167,7 +145,7 @@ contains
       ! Allocate stuff for later
       allocate(scatt_coeffs(order, groups, groups))
       scatt_coeffs = ZERO
-      allocate(ScattData_Histogram :: this % scatter)
+      allocate(ScattDataHistogram :: this % scatter)
 
     else if (scatt_type == ANGLE_TABULAR) then
       ! Check all scattering data of same size
@@ -185,7 +163,7 @@ contains
       ! Allocate stuff for later
       allocate(scatt_coeffs(order, groups, groups))
       scatt_coeffs = ZERO
-      allocate(ScattData_Tabular :: this % scatter)
+      allocate(ScattDataTabular :: this % scatter)
 
     else if (scatt_type == ANGLE_LEGENDRE) then
       ! Otherwise find the maximum scattering order
@@ -206,9 +184,9 @@ contains
       allocate(scatt_coeffs(order + 1, groups, groups))
       scatt_coeffs = ZERO
       if (legendre_mu_points == 1) then
-        allocate(ScattData_Legendre :: this % scatter)
+        allocate(ScattDataLegendre :: this % scatter)
       else
-        allocate(ScattData_Tabular :: this % scatter)
+        allocate(ScattDataTabular :: this % scatter)
       end if
     end if
 
@@ -242,7 +220,7 @@ contains
 
       ! Perform our operations which depend upon the type
       select type(nuc => nuclides(mat % nuclide(i)) % obj)
-      type is (Nuclide_Iso)
+      type is (NuclideIso)
 
         ! Add contributions to total, absorption, and fission data (if necessary)
         this % total = this % total + atom_density * nuc % total
@@ -308,9 +286,9 @@ contains
                  nuc % mult(gout,gin)
           end do
         end do
-      type is (Nuclide_Angle)
+      type is (NuclideAngle)
         error_code = 1
-        error_text = "Invalid Passing of Nuclide_Angle to MacroXS_Iso Object"
+        error_text = "Invalid Passing of NuclideAngle to MacroXSIso Object"
         return
       end select
     end do
@@ -363,12 +341,11 @@ contains
     ! Deallocate temporaries for the next material
     deallocate(scatt_coeffs, temp_energy, temp_mult)
 
-  end subroutine macroxs_iso_init
+  end subroutine macroxsiso_init
 
-  subroutine macroxs_angle_init(this, mat, nuclides, groups, get_kfiss, get_fiss, &
+  subroutine macroxsangle_init(this, mat, nuclides, groups, get_kfiss, get_fiss, &
        max_order, scatt_type, legendre_mu_points, error_code, error_text)
-
-    class(MacroXS_Angle), intent(inout)  :: this ! The MacroXS to initialize
+    class(MacroXSAngle), intent(inout)   :: this ! The MacroXS to initialize
     type(Material), pointer, intent(in)  :: mat  ! base material
     type(NuclideMGContainer), intent(in) :: nuclides(:) ! List of nuclides to harvest from
     integer, intent(in)                  :: groups ! Number of E groups
@@ -396,21 +373,21 @@ contains
     error_text = ''
 
     ! Get the number of each polar and azi angles and make sure all the
-    ! Nuclide_Angle types have the same number of these angles
+    ! NuclideAngle types have the same number of these angles
     npol = -1
     nazi = -1
     do i = 1, mat % n_nuclides
       select type(nuc => nuclides(mat % nuclide(i)) % obj)
-      type is (Nuclide_Angle)
+      type is (NuclideAngle)
         if (npol == -1) then
-          npol = nuc % Npol
-          nazi = nuc % Nazi
+          npol = nuc % n_pol
+          nazi = nuc % n_azi
           allocate(this % polar(npol))
           this % polar = nuc % polar
           allocate(this % azimuthal(nazi))
           this % azimuthal = nuc % azimuthal
         else
-          if ((npol /= nuc % Npol) .or. (nazi /= nuc % Nazi)) then
+          if ((npol /= nuc % n_pol) .or. (nazi /= nuc % n_azi)) then
             error_code = 1
             error_text = "All Angular Data Must Be Same Length!"
           end if
@@ -438,7 +415,7 @@ contains
       allocate(this % scatter(nazi, npol))
       do ipol = 1, npol
         do iazi = 1, nazi
-          allocate(ScattData_Histogram :: this % scatter(iazi, ipol) % obj)
+          allocate(ScattDataHistogram :: this % scatter(iazi, ipol) % obj)
         end do
       end do
 
@@ -461,7 +438,7 @@ contains
       allocate(this % scatter(nazi, npol))
       do ipol = 1, npol
         do iazi = 1, nazi
-          allocate(ScattData_Tabular :: this % scatter(iazi, ipol) % obj)
+          allocate(ScattDataTabular :: this % scatter(iazi, ipol) % obj)
         end do
       end do
 
@@ -487,9 +464,9 @@ contains
       do ipol = 1, npol
         do iazi = 1, nazi
           if (legendre_mu_points == 1) then
-            allocate(ScattData_Legendre :: this % scatter(iazi, ipol) % obj)
+            allocate(ScattDataLegendre :: this % scatter(iazi, ipol) % obj)
           else
-            allocate(ScattData_Tabular :: this % scatter(iazi, ipol) % obj)
+            allocate(ScattDataTabular :: this % scatter(iazi, ipol) % obj)
           end if
         end do
       end do
@@ -525,11 +502,11 @@ contains
 
       ! Perform our operations which depend upon the type
       select type(nuc => nuclides(mat % nuclide(i)) % obj)
-      type is (Nuclide_Iso)
+      type is (NuclideIso)
         error_code = 1
-        error_text = "Invalid Passing of Nuclide_Iso to MacroXS_Angle Object"
+        error_text = "Invalid Passing of NuclideIso to MacroXSAngle Object"
         return
-      type is (Nuclide_Angle)
+      type is (NuclideAngle)
         ! Add contributions to total, absorption, and fission data (if necessary)
         this % total = this % total + atom_density * nuc % total
         this % absorption = this % absorption + &
@@ -655,76 +632,14 @@ contains
     ! Deallocate temporaries for the next material
     deallocate(scatt_coeffs, temp_energy, temp_mult)
 
-  end subroutine macroxs_angle_init
-
-!===============================================================================
-! MACROXS*_CLEAR resets and deallocates data in MacroXS.
-!===============================================================================
-
-  subroutine macroxs_iso_clear(this)
-
-    class(MacroXS_Iso), intent(inout) :: this ! The MacroXS to clear
-
-    if (allocated(this % total)) then
-      deallocate(this % total, this % absorption, &
-                 this % nu_fission)
-    end if
-
-    if (allocated(this % fission)) then
-      deallocate(this % fission)
-    end if
-
-    if (allocated(this % k_fission)) then
-      deallocate(this % k_fission)
-    end if
-
-    call this % scatter % clear()
-
-    if (allocated(this % chi)) then
-      deallocate(this % chi)
-    end if
-
-  end subroutine macroxs_iso_clear
-
-  subroutine macroxs_angle_clear(this)
-
-    class(MacroXS_Angle), intent(inout) :: this ! The MacroXS to clear
-    integer :: i, j
-
-    if (allocated(this % total)) then
-      deallocate(this % total, this % absorption, &
-                 this % nu_fission)
-    end if
-
-    if (allocated(this % fission)) then
-      deallocate(this % fission)
-    end if
-
-    if (allocated(this % k_fission)) then
-      deallocate(this % k_fission)
-    end if
-
-    do i = 1, size(this % scatter,dim=2)
-      do j = 1, size(this % scatter,dim=1)
-        call this % scatter(j,i) % obj % clear()
-      end do
-    end do
-    if (allocated(this % scatter)) then
-      deallocate(this % scatter)
-    end if
-
-    if (allocated(this % chi)) then
-      deallocate(this % chi)
-    end if
-
-  end subroutine macroxs_angle_clear
+  end subroutine macroxsangle_init
 
 !===============================================================================
 ! MACROXS_*_GET_XS returns the requested data type
 !===============================================================================
 
-  function macroxs_iso_get_xs(this, g, xstype, gout, uvw) result(xs)
-    class(MacroXS_Iso), intent(in) :: this   ! The MacroXS to initialize
+  function macroxsiso_get_xs(this, g, xstype, gout, uvw) result(xs)
+    class(MacroXSIso), intent(in)  :: this   ! The MacroXS to initialize
     integer, intent(in)            :: g      ! Incoming Energy group
     character(*) , intent(in)      :: xstype ! Type of xs requested
     integer, optional, intent(in)  :: gout   ! Outgoing Energy group
@@ -752,10 +667,10 @@ contains
       end if
     end select
 
-  end function macroxs_iso_get_xs
+  end function macroxsiso_get_xs
 
-  function macroxs_angle_get_xs(this, g, xstype, gout,uvw) result(xs)
-    class(MacroXS_Angle), intent(in) :: this   ! The MacroXS to initialize
+  function macroxsangle_get_xs(this, g, xstype, gout,uvw) result(xs)
+    class(MacroXSAngle), intent(in)  :: this   ! The MacroXS to initialize
     integer, intent(in)              :: g      ! Incoming Energy group
     character(*) , intent(in)        :: xstype ! Type of xs requested
     integer, optional, intent(in)    :: gout   ! Outgoing Energy group
@@ -788,132 +703,6 @@ contains
       end select
     end if
 
-  end function macroxs_angle_get_xs
-
-!===============================================================================
-! THIN_GRID thins an (x,y) set while also thinning an associated y2
-!===============================================================================
-
-  subroutine thin_grid(xout, yout, yout2, tol, compression, maxerr)
-    real(8), allocatable, intent(inout) :: xout(:)     ! Resultant x grid
-    real(8), allocatable, intent(inout) :: yout(:)     ! Resultant y values
-    real(8), allocatable, intent(inout) :: yout2(:)     ! Secondary y values
-    real(8), intent(in)                 :: tol         ! Desired fractional error to maintain
-    real(8), intent(out)                :: compression ! Data reduction fraction
-    real(8), intent(inout)              :: maxerr      ! Maximum error due to compression
-
-    real(8), allocatable :: xin(:)      ! Incoming x grid
-    real(8), allocatable :: yin(:)      ! Incoming y values
-    real(8), allocatable :: yin2(:)     ! Secondary Incoming y values
-    integer :: k, klo, khi
-    integer :: all_ok
-    real(8) :: x1, y1, x2, y2, x, y, testval
-    integer :: num_keep, remove_it
-    real(8) :: initial_size
-    real(8) :: error
-    real(8) :: x_frac
-
-    initial_size = real(size(xout), 8)
-
-    allocate(xin(size(xout)))
-    xin = xout
-    allocate(yin(size(yout)))
-    yin = yout
-    allocate(yin2(size(yout2)))
-    yin2 = yout2
-
-    all_ok = size(yin)
-    maxerr = 0.0_8
-
-    ! This loop will step through each entry in dim==3 and check to see if
-    ! all of the values in other 2 dims can be replaced with linear interp.
-    ! If not, the value will be saved to a new array, if so, it will be
-    ! skipped.
-
-    xout = 0.0_8
-    yout = 0.0_8
-
-    ! Keep first point's data
-    xout(1) = xin(1)
-    yout(1) = yin(1)
-    yout2(1) = yin2(1)
-
-    ! Initialize data
-    num_keep = 1
-    klo = 1
-    khi = 3
-    k = 2
-    do while (khi <= size(xin))
-      remove_it = 0
-      x1 = xin(klo)
-      x2 = xin(khi)
-      x  = xin(k)
-      x_frac = 1.0_8 / (x2 - x1) * (x - x1)  ! Linear interp.
-
-      ! Check for removal. Otherwise, it stays. This is accomplished by leaving
-      ! remove_it as 0, entering the else portion of if(remove_it==all_ok)
-      y1 = yin(klo)
-      y2 = yin(khi)
-      y  = yin(k)
-
-      testval = y1 + (y2 - y1) * x_frac
-      error = abs(testval - y)
-      if (y /= 0.0_8) then
-        error = error / y
-      end if
-      if (error <= tol) then
-        remove_it = remove_it + 1
-        if (error > maxerr) then
-          maxerr = abs(testval - y)
-        end if
-      end if
-      ! Now place the point in to the proper bin and advance iterators.
-      if (remove_it /= 0) then
-        ! Then don't put it in the new grid but advance iterators
-        k = k + 1
-        khi = khi + 1
-      else
-        ! Put it in new grid and advance iterators accordingly
-        num_keep = num_keep + 1
-        xout(num_keep) = xin(k)
-        yout(num_keep) = yin(k)
-        yout2(num_keep) = yin2(k)
-        klo = k
-        k = k + 1
-        khi = khi + 1
-      end if
-    end do
-    ! Save the last point's data
-    num_keep = num_keep + 1
-    xout(num_keep) = xin(size(xin))
-    yout(num_keep) = yin(size(xin))
-    yout2(num_keep) = yin2(size(xin))
-
-    ! Finally, xout and yout were sized to match xin and yin since we knew
-    ! they would be no larger than those.  Now we must resize these arrays
-    ! and copy only the useful data in. Will use xin/yin for temp arrays.
-    xin = xout(1:num_keep)
-    yin = yout(1:num_keep)
-    yin2 = yout2(1:num_keep)
-
-    deallocate(xout)
-    deallocate(yout)
-    deallocate(yout2)
-    allocate(xout(num_keep))
-    allocate(yout(size(yin)))
-    allocate(yout2(size(yin2)))
-
-    xout = xin(1:num_keep)
-    yout = yin(1:num_keep)
-    yout2 = yin2(1:num_keep)
-
-    ! Clean up
-    deallocate(xin)
-    deallocate(yin)
-    deallocate(yin2)
-
-    compression = (initial_size - real(size(xout),8)) / initial_size
-
-  end subroutine thin_grid
+  end function macroxsangle_get_xs
 
 end module macroxs_header
