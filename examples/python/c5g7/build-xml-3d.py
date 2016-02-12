@@ -1,6 +1,6 @@
 import openmc
 from lattices import lattices, universes, cells, surfaces
-from tallies import tallies
+from tallies import tallies, mesh
 from openmc.source import Source
 from openmc.stats import Box
 
@@ -70,6 +70,7 @@ settings_file.cross_sections = "./mg_cross_sections.xml"
 settings_file.batches = batches
 settings_file.inactive = inactive
 settings_file.particles = particles
+settings_file.output = {'tallies': True, 'summary': True}
 settings_file.source = Source(space=Box([-32.13, -10.71, -107.1], [10.71, 32.13, 85.68]))
 settings_file.entropy_lower_left = [-32.13, -32.13, -107.1]
 settings_file.entropy_upper_right = [32.13,  32.13,  107.1]
@@ -109,6 +110,7 @@ plot_file.export_to_xml()
 
 # Instantiate a TalliesFile, register Tally/Mesh, and export to XML
 tallies_file = openmc.TalliesFile()
+tallies_file.add_mesh(mesh)
 
 for tally in tallies.values():
     tallies_file.add_tally(tally)

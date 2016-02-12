@@ -1,5 +1,4 @@
 import openmc
-from cells import cells
 
 ###############################################################################
 #                   Exporting to OpenMC tallies.xml File
@@ -7,23 +6,25 @@ from cells import cells
 
 tallies = {}
 
-# Instantiate a distribcell Tally
-tallies['UO2'] = openmc.Tally(tally_id=1)
-tallies['UO2'].add_filter(openmc.Filter(type='distribcell', bins=[cells['UO2'].id]))
-tallies['UO2'].add_score('fission')
+# Instantiate a tally mesh
+mesh = openmc.Mesh(mesh_id=1)
+mesh.type = 'regular'
+mesh.dimension = [51, 51, 1]
+mesh.lower_left = [-32.13, -32.13, -1.e50]
+mesh.upper_right = [32.13, 32.13, 1.e50]
 
-tallies['MOX 4.3%'] = openmc.Tally(tally_id=2)
-tallies['MOX 4.3%'].add_filter(openmc.Filter(type='distribcell', bins=[cells['MOX 4.3%'].id]))
-tallies['MOX 4.3%'].add_score('fission')
+# Instantiate some tally Filters
+mesh_filter = openmc.Filter()
+mesh_filter.mesh = mesh
 
-tallies['MOX 7.0%'] = openmc.Tally(tally_id=3)
-tallies['MOX 7.0%'].add_filter(openmc.Filter(type='distribcell', bins=[cells['MOX 7.0%'].id]))
-tallies['MOX 7.0%'].add_score('fission')
+# Instantiate the Tally
+tallies['Mesh Rates'] = openmc.Tally(tally_id=1, name='tally 1')
+tallies['Mesh Rates'].add_filter(mesh_filter)
+tallies['Mesh Rates'].add_score('flux')
+tallies['Mesh Rates'].add_score('fission')
+tallies['Mesh Rates'].add_score('nu-fission')
 
-tallies['MOX 8.7%'] = openmc.Tally(tally_id=4)
-tallies['MOX 8.7%'].add_filter(openmc.Filter(type='distribcell', bins=[cells['MOX 8.7%'].id]))
-tallies['MOX 8.7%'].add_score('fission')
-
-tallies['Fission Chamber'] = openmc.Tally(tally_id=5)
-tallies['Fission Chamber'].add_filter(openmc.Filter(type='distribcell', bins=[cells['Fission Chamber'].id]))
-tallies['Fission Chamber'].add_score('fission')
+tallies['Global Rates'] = openmc.Tally(tally_id=2, name='tally 2')
+tallies['Global Rates'].add_score('flux')
+tallies['Global Rates'].add_score('fission')
+tallies['Global Rates'].add_score('nu-fission')
