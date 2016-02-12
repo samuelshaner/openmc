@@ -12,7 +12,7 @@ module summary
   use nuclide_header
   use output,          only: time_stamp
   use surface_header
-  use simple_string,   only: to_str
+  use string,          only: to_str
   use tally_header,    only: TallyObject
 
   use hdf5
@@ -52,7 +52,7 @@ contains
     call write_attribute_string(file_id, "n_batches", &
          "description", "Total number of batches")
 
-      ! Write eigenvalue information
+    ! Write eigenvalue information
     if (run_mode == MODE_EIGENVALUE) then
       ! write number of inactive/active batches and generations/batch
       call write_dataset(file_id, "n_inactive", n_inactive)
@@ -114,13 +114,14 @@ contains
 
     integer          :: i, j, k, m
     integer, allocatable :: lattice_universes(:,:,:)
+    integer, allocatable :: cell_materials(:)
     integer(HID_T) :: geom_group
     integer(HID_T) :: cells_group, cell_group
     integer(HID_T) :: surfaces_group, surface_group
     integer(HID_T) :: universes_group, univ_group
     integer(HID_T) :: lattices_group, lattice_group
     real(8), allocatable :: coeffs(:)
-    character(MAX_LINE_LEN) :: region_spec
+    character(REGION_SPEC_LEN) :: region_spec
     type(Cell),     pointer :: c
     class(Surface), pointer :: s
     type(Universe), pointer :: u
@@ -157,17 +158,33 @@ contains
       select case (c%type)
       case (CELL_NORMAL)
         call write_dataset(cell_group, "fill_type", "normal")
-        if (c%material == MATERIAL_VOID) then
-          call write_dataset(cell_group, "material", -1)
+        if (size(c % material) == 1) then
+          if (c % material(1) == MATERIAL_VOID) then
+            call write_dataset(cell_group, "material", MATERIAL_VOID)
+          else
+            call write_dataset(cell_group, "material", &
+                 materials(c % material(1)) % id)
+          end if
         else
-          call write_dataset(cell_group, "material", materials(c%material)%id)
+          allocate(cell_materials(size(c % material)))
+          do j = 1, size(c % material)
+            if (c % material(j) == MATERIAL_VOID) then
+              cell_materials(j) = MATERIAL_VOID
+            else
+              cell_materials(j) = materials(c % material(j)) % id
+            end if
+          end do
+          call write_dataset(cell_group, "material", cell_materials)
+          deallocate(cell_materials)
         end if
 
       case (CELL_FILL)
         call write_dataset(cell_group, "fill_type", "universe")
         call write_dataset(cell_group, "fill", universes(c%fill)%id)
-        if (size(c%offset) > 0) then
-          call write_dataset(cell_group, "offset", c%offset)
+        if (allocated(c%offset)) then
+          if (size(c%offset) > 0) then
+            call write_dataset(cell_group, "offset", c%offset)
+          end if
         end if
 
         if (allocated(c%translation)) then
@@ -202,6 +219,8 @@ contains
         end select
       end do
       call write_dataset(cell_group, "region", adjustl(region_spec))
+
+      call write_dataset(cell_group, "distribcell_index", c % distribcell_index)
 
       call close_group(cell_group)
     end do CELL_LOOP
@@ -352,8 +371,10 @@ contains
       call write_dataset(lattice_group, "outer", lat%outer)
 
       ! Write distribcell offsets if present
-      if (size(lat%offset) > 0) then
-        call write_dataset(lattice_group, "offsets", lat%offset)
+      if (allocated(lat%offset)) then
+        if (size(lat%offset) > 0) then
+          call write_dataset(lattice_group, "offsets", lat%offset)
+        end if
       end if
 
       select type (lat)
@@ -362,16 +383,22 @@ contains
         call write_dataset(lattice_group, "type", "rectangular")
 
         ! Write lattice dimensions, lower left corner, and pitch
-        call write_dataset(lattice_group, "dimension", lat%n_cells)
-        call write_dataset(lattice_group, "lower_left", lat%lower_left)
+        if (lat % is_3d) then
+          call write_dataset(lattice_group, "dimension", lat % n_cells)
+          call write_dataset(lattice_group, "lower_left", lat % lower_left)
+        else
+          call write_dataset(lattice_group, "dimension", lat % n_cells(1:2))
+          call write_dataset(lattice_group, "lower_left", lat % lower_left)
+        end if
 
         ! Write lattice universes.
         allocate(lattice_universes(lat%n_cells(1), lat%n_cells(2), &
              &lat%n_cells(3)))
         do j = 1, lat%n_cells(1)
-          do k = 1, lat%n_cells(2)
+          do k = 0, lat%n_cells(2) - 1
             do m = 1, lat%n_cells(3)
-              lattice_universes(j,k,m) = universes(lat%universes(j,k,m))%id
+              lattice_universes(j, k+1, m) = &
+                   universes(lat%universes(j, lat%n_cells(2) - k, m))%id
             end do
           end do
         end do
@@ -553,7 +580,6 @@ contains
         filter_group = create_group(tally_group, "filter " // trim(to_str(j)))
 
         ! Write number of bins for this filter
-        call write_dataset(filter_group, "offset", t%filters(j)%offset)
         call write_dataset(filter_group, "n_bins", t%filters(j)%n_bins)
 
         ! Write filter bins
@@ -624,54 +650,7 @@ contains
       call write_dataset(tally_group, "n_score_bins", t%n_score_bins)
       allocate(str_array(size(t%score_bins)))
       do j = 1, size(t%score_bins)
-        select case(t%score_bins(j))
-        case (SCORE_FLUX)
-          str_array(j) = "flux"
-        case (SCORE_TOTAL)
-          str_array(j) = "total"
-        case (SCORE_SCATTER)
-          str_array(j) = "scatter"
-        case (SCORE_NU_SCATTER)
-          str_array(j) = "nu-scatter"
-        case (SCORE_SCATTER_N)
-          str_array(j) = "scatter-n"
-        case (SCORE_SCATTER_PN)
-          str_array(j) = "scatter-pn"
-        case (SCORE_NU_SCATTER_N)
-          str_array(j) = "nu-scatter-n"
-        case (SCORE_NU_SCATTER_PN)
-          str_array(j) = "nu-scatter-pn"
-        case (SCORE_TRANSPORT)
-          str_array(j) = "transport"
-        case (SCORE_N_1N)
-          str_array(j) = "n1n"
-        case (SCORE_ABSORPTION)
-          str_array(j) = "absorption"
-        case (SCORE_FISSION)
-          str_array(j) = "fission"
-        case (SCORE_NU_FISSION)
-          str_array(j) = "nu-fission"
-        case (SCORE_DELAYED_NU_FISSION)
-          str_array(j) = "delayed-nu-fission"
-        case (SCORE_KAPPA_FISSION)
-          str_array(j) = "kappa-fission"
-        case (SCORE_CURRENT)
-          str_array(j) = "current"
-        case (SCORE_FLUX_YN)
-          str_array(j) = "flux-yn"
-        case (SCORE_TOTAL_YN)
-          str_array(j) = "total-yn"
-        case (SCORE_SCATTER_YN)
-          str_array(j) = "scatter-yn"
-        case (SCORE_NU_SCATTER_YN)
-          str_array(j) = "nu-scatter-yn"
-        case (SCORE_EVENTS)
-          str_array(j) = "events"
-        case (SCORE_INVERSE_VELOCITY)
-          str_array(j) = "inverse-velocity"
-        case default
-          str_array(j) = reaction_name(t%score_bins(j))
-        end select
+        str_array(j) = reaction_name(t%score_bins(j))
       end do
       call write_dataset(tally_group, "score_bins", str_array)
 

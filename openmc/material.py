@@ -50,8 +50,8 @@ class Material(object):
         Density of the material (units defined separately)
     density_units : str
         Units used for `density`. Can be one of 'g/cm3', 'g/cc', 'kg/cm3',
-        'atom/b-cm', 'atom/cm3', 'sum', or 'macro' (the latter only applies
-        if in multi-group mode).
+        'atom/b-cm', 'atom/cm3', 'sum', or 'macro'.  The 'macro' unit only
+        applies in the case of a multi-group calculation.
 
     """
 
@@ -332,22 +332,21 @@ class Material(object):
 
         Parameters
         ----------
-        macroscopic : str or openmc.macroscopic.Macroscopic
+        macroscopic : str or Macroscopic
             Macroscopic to add
 
         """
 
         # Ensure no nuclides, elements, or sab are added since these would be
         # incompatible with macroscopics
-        if ((len(self._nuclides.keys()) != 0) and
-            (len(self._elements.keys()) != 0) and (len(self._sab) != 0)):
+        if self._nuclides or self._elements or self._sab:
             msg = 'Unable to add a Macroscopic data set to Material ID="{0}" ' \
                   'with a macroscopic value "{1}" as an incompatible data ' \
                   'member (i.e., nuclide, element, or S(a,b) table) ' \
                   'has already been added'.format(self._id, macroscopic)
             raise ValueError(msg)
 
-        if not isinstance(macroscopic, (openmc.Macroscopic, str)):
+        if not isinstance(macroscopic, (openmc.Macroscopic, basestring)):
             msg = 'Unable to add a Macroscopic to Material ID="{0}" with a ' \
                   'non-Macroscopic value "{1}"'.format(self._id, macroscopic)
             raise ValueError(msg)
@@ -372,7 +371,7 @@ class Material(object):
 
         Parameters
         ----------
-        macroscopic : openmc.macroscopic.Macroscopic
+        macroscopic : Macroscopic
             Macroscopic to remove
 
         """
@@ -512,7 +511,7 @@ class Material(object):
 
         return xml_element
 
-    def _get_macroscopic_xml(self, macroscopic, distrib=False):
+    def _get_macroscopic_xml(self, macroscopic):
         xml_element = ET.Element("macroscopic")
         xml_element.set("name", macroscopic._name)
 
@@ -623,14 +622,13 @@ class Material(object):
 
                 # Create element XML subelements
                 subelements = self._get_elements_xml(self._elements, distrib=True)
-                for subelement_ele in subelements:
-                    subelement.append(subelement_ele)
+                for subsubelement in subelements:
+                    subelement.append(subsubelement)
             else:
                 # Create macroscopic XML subelements
-                subelement_ele = self._get_macroscopic_xml(self,
-                                                           self._macroscopic,
-                                                           distrib=True)
-                subelement.append(subelement_ele)
+                subsubelement = self._get_macroscopic_xml(self._macroscopic,
+                                                          distrib=True)
+                subelement.append(subsubelement)
 
         if len(self._sab) > 0:
             for sab in self._sab:

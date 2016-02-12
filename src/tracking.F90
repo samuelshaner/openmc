@@ -1,23 +1,23 @@
 module tracking
 
-  use constants,       only: MODE_EIGENVALUE
-  use cross_section,   only: calculate_xs
-  use error,           only: fatal_error, warning
-  use geometry,        only: find_cell, distance_to_boundary, cross_surface, &
-                             cross_lattice, check_cell_overlap
-  use geometry_header, only: Universe, BASE_UNIVERSE
+  use constants,          only: MODE_EIGENVALUE
+  use cross_section,      only: calculate_xs
+  use error,              only: fatal_error, warning
+  use geometry,           only: find_cell, distance_to_boundary, cross_surface, &
+                                cross_lattice, check_cell_overlap
+  use geometry_header,    only: Universe, BASE_UNIVERSE
   use global
-  use macroxs,         only: calculate_mgxs
-  use output,          only: write_message
-  use particle_header, only: LocalCoord, Particle
-  use physics,         only: collision
-  use physics_mg,      only: collision_mg
-  use random_lcg,      only: prn
-  use simple_string,   only: to_str
-  use tally,           only: score_analog_tally, score_tracklength_tally, &
-                             score_collision_tally, score_surface_current
-  use track_output,    only: initialize_particle_track, write_particle_track, &
-                             add_particle_track, finalize_particle_track
+  use macroxs_operations, only: calculate_mgxs
+  use output,             only: write_message
+  use particle_header,    only: LocalCoord, Particle
+  use physics,            only: collision
+  use physics_mg,         only: collision_mg
+  use random_lcg,         only: prn
+  use string,             only: to_str
+  use tally,              only: score_analog_tally, score_tracklength_tally, &
+                                score_collision_tally, score_surface_current
+  use track_output,       only: initialize_particle_track, write_particle_track, &
+                                add_particle_track, finalize_particle_track
 
   implicit none
 
@@ -225,6 +225,7 @@ contains
           call p % initialize_from_source(p % secondary_bank(p % n_secondary), &
                                           run_CE)
           p % n_secondary = p % n_secondary - 1
+          n_event = 0
 
           ! Enter new particle in particle track file
           if (p % write_track) call add_particle_track()

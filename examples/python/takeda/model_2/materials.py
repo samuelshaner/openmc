@@ -10,7 +10,7 @@ import numpy as np
 groups = openmc.mgxs.EnergyGroups(group_edges=[1E-11, 9.6122E-04, 8.6517E-02, 1.3534E-00, 1.E1])
 
 # Instantiate the 4-group (Takeda) cross section data
-core_xsdata = openmc.Xsdata('core.300k', groups)
+core_xsdata = openmc.XSdata('core.300k', groups)
 core_xsdata.order = 0
 core_xsdata.total      = np.array([1.14568E-01, 2.05177E-01, 3.29381E-01, 3.89810E-01])
 core_xsdata.absorption = np.array([7.45551E-03, 3.5254E-03, 7.80136E-03, 2.74496E-02])
@@ -22,7 +22,7 @@ core_xsdata.nu_fission = np.array([2.06063E-02, 6.10571E-03, 6.91403E-03, 2.6068
 core_xsdata.fission    = np.array([2.06063E-02, 6.10571E-03, 6.91403E-03, 2.60689E-02]) * 0.5
 core_xsdata.chi        = np.array([5.83319E-01, 4.05450E-01, 1.12310E-02, 0.00000E-00])
 
-axial_reflector_xsdata = openmc.Xsdata('axial_reflector.300k', groups)
+axial_reflector_xsdata = openmc.XSdata('axial_reflector.300k', groups)
 axial_reflector_xsdata.order = 0
 axial_reflector_xsdata.total      = np.array([1.65612E-01, 1.66866E-01, 2.68633E-01, 8.34911E-01])
 axial_reflector_xsdata.absorption = np.array([6.39154E-04, 4.06876E-04, 1.20472E-03, 4.36382E-03])
@@ -33,7 +33,7 @@ axial_reflector_xsdata.scatter    = np.array([[[1.15653E-01, 4.84731E-02, 8.4649
 axial_reflector_xsdata.nu_fission = np.array([0.00000E-00, 0.00000E-00, 0.00000E-00, 0.00000E-00])
 axial_reflector_xsdata.chi        = np.array([5.83319E-01, 4.05450E-01, 1.12310E-02, 0.00000E-00])
 
-radial_inner_blanket_xsdata = openmc.Xsdata('radial_inner_blanket.300k', groups)
+radial_inner_blanket_xsdata = openmc.XSdata('radial_inner_blanket.300k', groups)
 radial_inner_blanket_xsdata.order = 0
 radial_inner_blanket_xsdata.total      = np.array([1.19648E-01, 2.42195E-01, 3.56476E-01, 3.79433E-01])
 radial_inner_blanket_xsdata.absorption = np.array([7.43283E-03, 1.99906E-03, 6.79036E-03, 1.58015E-02])
@@ -45,7 +45,7 @@ radial_inner_blanket_xsdata.nu_fission = np.array([1.89496E-02, 1.75265E-04, 2.0
 radial_inner_blanket_xsdata.fission    = np.array([1.89496E-02, 1.75265E-04, 2.06978E-04, 1.13451E-03]) * 0.5
 radial_inner_blanket_xsdata.chi        = np.array([5.83319E-01, 4.05450E-01, 1.12310E-02, 0.00000E-00])
 
-radial_reflector_xsdata = openmc.Xsdata('radial_reflector.300k', groups)
+radial_reflector_xsdata = openmc.XSdata('radial_reflector.300k', groups)
 radial_reflector_xsdata.order = 0
 radial_reflector_xsdata.total      = np.array([1.71748E-01, 2.17826E-01, 4.47761E-01, 7.95199E-01])
 radial_reflector_xsdata.absorption = np.array([1.13305E-03, 4.90793E-04, 1.94500E-03, 5.70263E-03])
@@ -56,7 +56,7 @@ radial_reflector_xsdata.scatter    = np.array([[[1.23352E-01, 4.61307E-02, 1.132
 radial_reflector_xsdata.nu_fission = np.array([0.00000E-00, 0.00000E-00, 0.00000E-00, 0.00000E-00])
 radial_reflector_xsdata.chi        = np.array([5.83319E-01, 4.05450E-01, 1.12310E-02, 0.00000E-00])
 
-axial_blanket_xsdata = openmc.Xsdata('axial_blanket.300k', groups)
+axial_blanket_xsdata = openmc.XSdata('axial_blanket.300k', groups)
 axial_blanket_xsdata.order = 0
 axial_blanket_xsdata.total      = np.array([1.16493E-01, 2.20521E-01, 3.44544E-01, 3.88356E-01])
 axial_blanket_xsdata.absorption = np.array([5.35418E-03, 1.48604E-03, 5.35300E-03, 1.34694E-02])
@@ -68,7 +68,7 @@ axial_blanket_xsdata.nu_fission = np.array([1.31770E-02, 1.26026E-04, 1.52380E-0
 axial_blanket_xsdata.fission    = np.array([1.31770E-02, 1.26026E-04, 1.52380E-04, 7.87302E-04]) * 0.5
 axial_blanket_xsdata.chi        = np.array([5.83319E-01, 4.05450E-01, 1.12310E-02, 0.00000E-00])
 
-control_rod_xsdata = openmc.Xsdata('control_rod.300k', groups)
+control_rod_xsdata = openmc.XSdata('control_rod.300k', groups)
 control_rod_xsdata.order = 0
 control_rod_xsdata.total      = np.array([1.84333E-01, 3.66121E-01, 6.15527E-01, 1.09486E-00])
 control_rod_xsdata.absorption = np.array([5.97638E-03, 1.76941E-02, 8.82741E-02, 4.75591E-01])
@@ -79,7 +79,7 @@ control_rod_xsdata.scatter    = np.array([[[1.34373E-01, 4.37775E-02, 2.06054E-0
 control_rod_xsdata.nu_fission = np.array([0.00000E-00, 0.00000E-00, 0.00000E-00, 0.00000E-00])
 control_rod_xsdata.chi        = np.array([5.83319E-01, 4.05450E-01, 1.12310E-02, 0.00000E-00])
 
-na_filled_crp_xsdata = openmc.Xsdata('na_filled_crp.300k', groups)
+na_filled_crp_xsdata = openmc.XSdata('na_filled_crp.300k', groups)
 na_filled_crp_xsdata.order = 0
 na_filled_crp_xsdata.total      = np.array([6.58979E-02, 1.09810E-01, 1.86765E-01, 2.09933E-01])
 na_filled_crp_xsdata.absorption = np.array([3.10744E-04, 1.13062E-04, 4.48988E-04, 1.07518E-03])
@@ -90,7 +90,7 @@ na_filled_crp_xsdata.scatter    = np.array([[[4.74407E-02, 1.76894E-02, 4.57012E
 na_filled_crp_xsdata.nu_fission = np.array([0.00000E-00, 0.00000E-00, 0.00000E-00, 0.00000E-00])
 na_filled_crp_xsdata.chi        = np.array([5.83319E-01, 4.05450E-01, 1.12310E-02, 0.00000E-00])
 
-empty_matrix_xsdata = openmc.Xsdata('empty_matrix.300k', groups)
+empty_matrix_xsdata = openmc.XSdata('empty_matrix.300k', groups)
 empty_matrix_xsdata.order = 0
 empty_matrix_xsdata.total      = np.array([1.36985E-02, 1.69037E-02, 3.12271E-02, 6.29537E-02])
 empty_matrix_xsdata.absorption = np.array([7.49800E-05, 3.82435E-05, 1.39355E-04, 4.95515E-04])

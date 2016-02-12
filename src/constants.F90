@@ -11,10 +11,10 @@ module constants
   integer, parameter :: VERSION_RELEASE = 1
 
   ! Revision numbers for binary files
-  integer, parameter :: REVISION_STATEPOINT       = 14
-  integer, parameter :: REVISION_PARTICLE_RESTART = 1
+  integer, parameter :: REVISION_STATEPOINT       = 15
+  integer, parameter :: REVISION_PARTICLE_RESTART = 2
   integer, parameter :: REVISION_TRACK            = 1
-  integer, parameter :: REVISION_SUMMARY          = 1
+  integer, parameter :: REVISION_SUMMARY          = 3
 
   ! ============================================================================
   ! ADJUSTABLE PARAMETERS
@@ -45,10 +45,11 @@ module constants
 
   ! Maximum number of words in a single line, length of line, and length of
   ! single word
-  integer, parameter :: MAX_WORDS    = 500
-  integer, parameter :: MAX_LINE_LEN = 250
-  integer, parameter :: MAX_WORD_LEN = 150
-  integer, parameter :: MAX_FILE_LEN = 255
+  integer, parameter :: MAX_WORDS       = 500
+  integer, parameter :: MAX_LINE_LEN    = 250
+  integer, parameter :: MAX_WORD_LEN    = 150
+  integer, parameter :: MAX_FILE_LEN    = 255
+  integer, parameter :: REGION_SPEC_LEN = 1000
 
   ! Maximum number of external source spatial resamples to encounter before an
   ! error is thrown.
@@ -138,6 +139,9 @@ module constants
   ! Maximum number of lost particles
   integer, parameter :: MAX_LOST_PARTICLES = 10
 
+  ! Maximum number of lost particles, relative to the total number of particles
+  real(8), parameter :: REL_MAX_LOST_PARTICLES = 1e-6_8
+
   ! ============================================================================
   ! CROSS SECTION RELATED CONSTANTS
 
@@ -210,8 +214,8 @@ module constants
 
   ! MGXS Table Types
   integer, parameter :: &
-       ISOTROPIC   = 1, & ! Isotropically Weighted Data
-       ANGLE       = 2    ! Data by Angular Bins
+       MGXS_ISOTROPIC   = 1, & ! Isotropically Weighted Data
+       MGXS_ANGLE       = 2    ! Data by Angular Bins
 
   ! Fission neutron emission (nu) type
   integer, parameter ::   &
@@ -365,28 +369,6 @@ module constants
   integer, parameter :: STREAM_TRACKING = 1
   integer, parameter :: STREAM_TALLIES  = 2
   integer, parameter :: STREAM_SOURCE   = 3
-
-  ! ============================================================================
-  ! EXTERNAL SOURCE PARAMETERS
-
-  ! Source spatial distribution types
-  integer, parameter :: &
-       SRC_SPACE_BOX     = 1, & ! Source in a rectangular prism
-       SRC_SPACE_POINT   = 2, & ! Source at a single point
-       SRC_SPACE_FISSION = 3    ! Source in prism filtered by fissionable mats
-
-  ! Source angular distribution types
-  integer, parameter :: &
-       SRC_ANGLE_ISOTROPIC = 1, & ! Isotropic angular
-       SRC_ANGLE_MONO      = 2, & ! Monodirectional source
-       SRC_ANGLE_TABULAR   = 3    ! Tabular distribution
-
-  ! Source energy distribution types
-  integer, parameter :: &
-       SRC_ENERGY_MONO    = 1, & ! Monoenergetic source
-       SRC_ENERGY_MAXWELL = 2, & ! Maxwell fission spectrum
-       SRC_ENERGY_WATT    = 3, & ! Watt fission spectrum
-       SRC_ENERGY_TABULAR = 4    ! Tabular distribution
 
   ! ============================================================================
   ! MISCELLANEOUS CONSTANTS

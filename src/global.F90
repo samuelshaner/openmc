@@ -5,7 +5,7 @@ module global
   use constants
   use dict_header,      only: DictCharInt, DictIntInt
   use geometry_header,  only: Cell, Universe, Lattice, LatticeContainer
-  use macroxs_header,   only: MacroXS_Base, MacroXSContainer
+  use macroxs_header,   only: MacroXSContainer
   use material_header,  only: Material
   use mesh_header,      only: RegularMesh
   use nuclide_header
@@ -13,7 +13,7 @@ module global
   use sab_header,       only: SAlphaBeta
   use set_header,       only: SetInt
   use surface_header,   only: SurfaceContainer
-  use source_header,    only: ExtSource
+  use source_header,    only: SourceDistribution
   use tally_header,     only: TallyObject, TallyMap, TallyResult
   use trigger_header,   only: KTrigger
   use timer_header,     only: Timer
@@ -23,7 +23,6 @@ module global
 #endif
 
   implicit none
-  save
 
   ! ============================================================================
   ! GEOMETRY-RELATED VARIABLES
@@ -87,7 +86,7 @@ module global
   ! CONTINUOUS-ENERGY CROSS SECTION RELATED VARIABLES
 
   ! Cross section arrays
-  type(Nuclide_CE), allocatable, target :: nuclides(:)    ! Nuclide cross-sections
+  type(NuclideCE), allocatable, target :: nuclides(:)    ! Nuclide cross-sections
   type(SAlphaBeta), allocatable, target :: sab_tables(:)  ! S(a,b) tables
 
   integer :: n_sab_tables     ! Number of S(a,b) thermal scattering tables
@@ -219,7 +218,7 @@ module global
   logical :: satisfy_triggers = .false.       ! whether triggers are satisfied
 
   ! External source
-  type(ExtSource), target :: external_source
+  type(SourceDistribution), allocatable :: external_source(:)
 
   ! Source and fission bank
   type(Bank), allocatable, target :: source_bank(:)
@@ -325,9 +324,6 @@ module global
   character(MAX_FILE_LEN) :: path_source_point     ! Path to binary source point
   character(MAX_FILE_LEN) :: path_particle_restart ! Path to particle restart
   character(MAX_FILE_LEN) :: path_output = ''      ! Path to output directory
-
-  ! Random number seed
-  integer(8) :: seed = 1_8
 
   ! The verbosity controls how much information will be printed to the
   ! screen and in logs
@@ -486,18 +482,10 @@ contains
     end if
 
     if (allocated(nuclides_MG)) then
-      ! First call the clear routines
-      do i = 1, size(nuclides_MG)
-        call nuclides_MG(i) % obj % clear()
-      end do
       deallocate(nuclides_MG)
     end if
 
     if (allocated(macro_xs)) then
-    ! First call the clear routines
-      do i = 1, size(macro_xs)
-        call macro_xs(i) % obj % clear()
-      end do
       deallocate(macro_xs)
     end if
 
@@ -506,12 +494,7 @@ contains
     if (allocated(micro_xs)) deallocate(micro_xs)
 
     ! Deallocate external source
-    if (allocated(external_source % params_space)) &
-         deallocate(external_source % params_space)
-    if (allocated(external_source % params_angle)) &
-         deallocate(external_source % params_angle)
-    if (allocated(external_source % params_energy)) &
-         deallocate(external_source % params_energy)
+    if (allocated(external_source)) deallocate(external_source)
 
     ! Deallocate k and entropy
     if (allocated(k_generation)) deallocate(k_generation)

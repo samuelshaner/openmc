@@ -11,7 +11,7 @@
   -->
   <xsdata>
     <!-- Meta data for this data -->
-    <name>UO2.71c</name>
+    <name>UO2.300K</name>
     <alias>UO2.71c</alias>
     <kT> 2.53E-8 </kT> <!-- in MeV -->
     <order>0</order>
@@ -67,7 +67,7 @@
 
   <xsdata>
     <!-- Meta data for this data -->
-    <name>MOX1.71c</name>
+    <name>MOX1.300K</name>
     <alias>MOX1.71c</alias>
     <kT> 2.53E-8 </kT> <!-- in MeV -->
     <order>0</order>
@@ -124,7 +124,7 @@
 
   <xsdata>
     <!-- Meta data for this data -->
-    <name>MOX2.71c</name>
+    <name>MOX2.300K</name>
     <alias>MOX2.71c</alias>
     <kT> 2.53E-8 </kT> <!-- in MeV -->
     <order>0</order>
@@ -180,7 +180,7 @@
 
   <xsdata>
     <!-- Meta data for this data -->
-    <name>MOX3.71c</name>
+    <name>MOX3.300K</name>
     <alias>MOX3.71c</alias>
     <kT> 2.53E-8 </kT> <!-- in MeV -->
     <order>0</order>
@@ -236,7 +236,7 @@
 
   <xsdata>
     <!-- Meta data for this data -->
-    <name>FC.71c</name>
+    <name>FC.300K</name>
     <alias>FC.71c</alias>
     <kT> 2.53E-8 </kT> <!-- in MeV -->
     <order>0</order>
@@ -286,7 +286,7 @@
 
   <xsdata>
     <!-- Meta data for this data -->
-    <name>GT.71c</name>
+    <name>GT.300K</name>
     <alias>GT.71c</alias>
     <kT> 2.53E-8 </kT> <!-- in MeV -->
     <order>0</order>
@@ -318,7 +318,7 @@
 
   <xsdata>
     <!-- Meta data for this data -->
-    <name>LWTR.71c</name>
+    <name>LWTR.300K</name>
     <alias>LWTR.71c</alias>
     <kT> 2.53E-8 </kT> <!-- in MeV -->
     <order>0</order>
@@ -351,7 +351,7 @@
 
   <xsdata>
     <!-- Meta data for this data -->
-    <name>CR.71c</name>
+    <name>CR.300K</name>
     <alias>CR.71c</alias>
     <kT> 2.53E-8 </kT> <!-- in MeV -->
     <order>0</order>

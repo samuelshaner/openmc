@@ -14,12 +14,23 @@ from openmc.checkvalue import check_type, check_value, check_greater_than, \
                               check_iterable_type
 from openmc.clean_xml import *
 
-# MGXS Representations supported by OpenMC
-REPRESENTATIONS = ['isotropic', 'angle']
+# Supported incoming particle MGXS angular treatment representations
+_REPRESENTATIONS = ['isotropic', 'angle']
 
 def ndarray_to_string(arr):
     """Converts a numpy ndarray in to a join with spaces between entries
     similar to ' '.join(map(str,arr)) but applied to all sub-dimensions.
+
+    Parameters
+    ----------
+    arr : ndarray
+        Array to combine in to a string
+
+    Returns
+    -------
+    text : str
+        String representation of array in arr
+
     """
 
     shape = arr.shape
@@ -67,8 +78,8 @@ def ndarray_to_string(arr):
     return text
 
 
-class Xsdata(object):
-    """A multi-group cross section data set (xsdata) providing all the
+class XSdata(object):
+    """A multi-group cross section data set providing all the
     multi-group data necessary for a multi-group OpenMC calculation.
 
     Parameters
@@ -76,8 +87,7 @@ class Xsdata(object):
     name : str, optional
         Name of the mgxs data set.
 
-
-    representation : str
+    representation : {'isotropic', 'angle'}
         Method used in generating the MGXS (isotropic or angle-dependent flux
         weighting). Defaults to 'isotropic'
 
@@ -89,11 +99,11 @@ class Xsdata(object):
         Separate unique identifier for the xsdata object
     kT : float
         Temperature (in units of MeV) of this data set.
-    energy_groups : openmc.mgxs.EnergyGroups
+    energy_groups : EnergyGroups
         Energy group structure
     fissionable : boolean
         Whether or not this is a fissionable data set.
-    scatt_type : str
+    scatt_type : {'legendre', 'histogram', or 'tabular'}
         Angular distribution representation (legendre, histogram, or tabular)
     order : int
         Either the Legendre order, number of bins, or number of points used to
@@ -101,9 +111,9 @@ class Xsdata(object):
         transfer probability.
     tabular_legendre : dict
         Set how to treat the Legendre scattering kernel (tabular or leave in
-        Legendre polynomial form). Dict contains two keys: ``enable`` and
-        ``num_points``.  ``enable`` is a boolean and ``num_points`` is the
-        number of points to use, if ``enable`` is True.
+        Legendre polynomial form). Dict contains two keys: 'enable' and
+        'num_points'.  'enable' is a boolean and 'num_points' is the
+        number of points to use, if 'enable' is True.
 
     """
     def __init__(self, name, energy_groups, representation="isotropic"):
@@ -140,7 +150,6 @@ class Xsdata(object):
     @property
     def representation(self):
         return self._representation
-
 
     @property
     def alias(self):
@@ -212,7 +221,7 @@ class Xsdata(object):
 
     @name.setter
     def name(self, name):
-        check_type('name for Xsdata', name, basestring)
+        check_type('name for XSdata', name, basestring)
         self._name = name
 
     @energy_groups.setter
@@ -221,8 +230,8 @@ class Xsdata(object):
         check_type("energy_groups", energy_groups, EnergyGroups)
 
         # Check that there is one or more groups
-        if ((energy_groups.num_energy_groups.num_groups is None) or
-            (energy_groups.num_energy_groups.num_groups < 1)):
+        if ((energy_groups.num_groups is None) or
+            (energy_groups.num_groups < 1)):
 
             msg = 'energy_groups object incorrectly initialized.'
             raise ValueError(msg)
@@ -232,13 +241,13 @@ class Xsdata(object):
     @representation.setter
     def representation(self, representation):
         # Check it is of valid type.
-        check_value('representation', representation, REPRESENTATIONS)
+        check_value('representation', representation, _REPRESENTATIONS)
         self._representation = representation
 
     @alias.setter
     def alias(self, alias):
         if alias is not None:
-            check_type('alias for Xsdata', alias, basestring)
+            check_type('alias', alias, basestring)
             self._alias = alias
         else:
             self._alias = self._name
@@ -280,7 +289,10 @@ class Xsdata(object):
             check_value('num_points', num_points, Integral)
             check_greater_than('num_points', num_points, 0)
         else:
-            num_points = 33
+            if enable == False:
+                num_points = 1
+            else:
+                num_points = 33
         self._tabular_legendre = {'enable': enable, 'num_points': num_points}
 
     @num_polar.setter
@@ -429,7 +441,7 @@ class Xsdata(object):
 
     @nu_fission.setter
     def nu_fission(self, nu_fission):
-        # nu_fission ca nbe given as a vector or a matrix
+        # nu_fission can be given as a vector or a matrix
         # Vector is used when chi also exists.
         # Matrix is used when chi does not exist.
         # We have to check that the correct form is given, but only if
@@ -446,7 +458,7 @@ class Xsdata(object):
             shape_vec = (self._num_polar, self._num_azimuthal,
                          self._energy_groups.num_groups)
             shape_mat = (self._num_polar, self._num_azimuthal,
-                         self._energy_groups.num_group,
+                         self._energy_groups.num_groups,
                          self._energy_groups.num_groups)
 
         # Begin by checking the case when chi has already been given and thus
@@ -563,6 +575,8 @@ class MGXSLibraryFile(object):
         Inverse of velocities, units of sec/cm
     filename : str
         XML file to write to.
+    xsdatas : Iterable of XSdata
+        Iterable of multi-Group cross section data objects
     """
 
     def __init__(self, energy_groups):
@@ -593,24 +607,24 @@ class MGXSLibraryFile(object):
         self._energy_groups = energy_groups
 
     def add_xsdata(self, xsdata):
-        """Add an xsdata entry to the file.
+        """Add an XSdata entry to the file.
 
         Parameters
         ----------
-        xsdata : Xsdata
+        xsdata : XSdata
             MGXS information to add
 
         """
 
         # Check the type
-        if not isinstance(xsdata, Xsdata):
-            msg = 'Unable to add a non-Xsdata "{0}" to the ' \
+        if not isinstance(xsdata, XSdata):
+            msg = 'Unable to add a non-XSdata "{0}" to the ' \
                   'MGXSLibraryFile'.format(xsdata)
             raise ValueError(msg)
 
         # Make sure energy groups match.
         if xsdata.energy_groups != self._energy_groups:
-            msg = 'Energy groups of Xsdata do not match that of MGXSLibraryFile!'
+            msg = 'Energy groups of XSdata do not match that of MGXSLibraryFile!'
             raise ValueError(msg)
 
         self._xsdatas.append(xsdata)
@@ -620,8 +634,8 @@ class MGXSLibraryFile(object):
 
         Parameters
         ----------
-        xsdatas : tuple or list of Xsdata
-            Xsdatas to add
+        xsdatas : tuple or list of XSdata
+            XSdatas to add
 
         """
 
@@ -638,14 +652,14 @@ class MGXSLibraryFile(object):
 
         Parameters
         ----------
-        xsdata : Xsdata
-            Xsdata to remove
+        xsdata : XSdata
+            XSdata to remove
 
         """
 
-        if not isinstance(xsdata, Xsdata):
-            msg = 'Unable to remove a non-Xsdata "{0}" from the ' \
-                  'XsdatasFile'.format(xsdata)
+        if not isinstance(xsdata, XSdata):
+            msg = 'Unable to remove a non-XSdata "{0}" from the ' \
+                  'XSdatasFile'.format(xsdata)
             raise ValueError(msg)
 
         self._xsdatas.remove(xsdata)

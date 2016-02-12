@@ -3,6 +3,9 @@ module input_xml
   use cmfd_input,       only: configure_cmfd
   use constants
   use dict_header,      only: DictIntInt, ElemKeyValueCI
+  use distribution_multivariate
+  use distribution_univariate
+  use endf,             only: reaction_name
   use energy_grid,      only: grid_method, n_log_bins
   use error,            only: fatal_error, warning
   use geometry_header,  only: Cell, Lattice, RectLattice, HexLattice
@@ -11,11 +14,11 @@ module input_xml
   use mesh_header,      only: RegularMesh
   use output,           only: write_message
   use plot_header
-  use random_lcg,       only: prn
+  use random_lcg,       only: prn, seed
   use surface_header
   use stl_vector,       only: VectorInt
-  use simple_string,    only: to_lower, to_str, starts_with, ends_with
-  use string,           only: str_to_int, str_to_real, tokenize
+  use string,           only: str_to_int, str_to_real, tokenize, &
+                              to_lower, to_str, starts_with, ends_with
   use tally_header,     only: TallyObject, TallyFilter
   use tally_initialize, only: add_tallies
   use xml_interface
@@ -60,11 +63,11 @@ contains
     character(MAX_LINE_LEN) :: temp_str
     integer :: i
     integer :: n
-    integer :: coeffs_reqd
     integer :: temp_int
     integer :: temp_int_array3(3)
     integer, allocatable :: temp_int_array(:)
     integer(8) :: temp_long
+    real(8), allocatable :: temp_real(:)
     integer :: n_tracks
     logical :: file_exists
     character(MAX_FILE_LEN) :: env_variable
@@ -73,6 +76,8 @@ contains
     type(Node), pointer :: doc            => null()
     type(Node), pointer :: node_mode      => null()
     type(Node), pointer :: node_source    => null()
+    type(Node), pointer :: node_space     => null()
+    type(Node), pointer :: node_angle     => null()
     type(Node), pointer :: node_dist      => null()
     type(Node), pointer :: node_cutoff    => null()
     type(Node), pointer :: node_entropy   => null()
@@ -85,6 +90,7 @@ contains
     type(Node), pointer :: node_trigger   => null()
     type(Node), pointer :: node_keff_trigger => null()
     type(NodeList), pointer :: node_scat_list => null()
+    type(NodeList), pointer :: node_source_list => null()
 
     ! Display output message
     call write_message("Reading settings XML file...", 5)
@@ -109,7 +115,7 @@ contains
       temp_str = trim(to_lower(temp_str))
       if (temp_str == "mg" .or. temp_str == "multi-group") then
         run_CE = .false.
-      else if (temp_str == "ce" .or. temp_str == "continuous") then
+      else if (temp_str == "ce" .or. temp_str == "continuous-energy") then
         run_CE = .true.
       end if
     end if
@@ -210,8 +216,8 @@ contains
     end if
 
     ! Make sure that either eigenvalue or fixed source was specified
-    if (.not.check_for_node(doc, "eigenvalue") .and. &
-         .not.check_for_node(doc, "fixed_source")) then
+    if (.not. check_for_node(doc, "eigenvalue") .and. &
+         .not. check_for_node(doc, "fixed_source")) then
       call fatal_error("<eigenvalue> or <fixed_source> not specified.")
     end if
 
@@ -224,7 +230,7 @@ contains
       call get_node_ptr(doc, "eigenvalue", node_mode)
 
       ! Check number of particles
-      if (.not.check_for_node(node_mode, "particles")) then
+      if (.not. check_for_node(node_mode, "particles")) then
         call fatal_error("Need to specify number of particles per generation.")
       end if
 
@@ -294,7 +300,7 @@ contains
       call get_node_ptr(doc, "fixed_source", node_mode)
 
       ! Check number of particles
-      if (.not.check_for_node(node_mode, "particles")) then
+      if (.not. check_for_node(node_mode, "particles")) then
         call fatal_error("Need to specify number of particles per batch.")
       end if
 
@@ -382,185 +388,249 @@ contains
     ! ==========================================================================
     ! EXTERNAL SOURCE
 
-    ! Get pointer to source
-    if (check_for_node(doc, "source")) then
-      call get_node_ptr(doc, "source", node_source)
-    else
-      call fatal_error("No source specified in settings XML file.")
-    end if
+    ! Get point to list of <source> elements and make sure there is at least one
+    call get_node_list(doc, "source", node_source_list)
+    n = get_list_size(node_source_list)
+    if (n == 0) call fatal_error("No source specified in settings XML file.")
 
-    ! Check if we want to write out source
-    if (check_for_node(node_source, "write_initial")) then
-      call get_node_value(node_source, "write_initial", temp_str)
-      temp_str = to_lower(temp_str)
-      if (trim(temp_str) == 'true' .or. trim(temp_str) == '1') &
-           write_initial_source = .true.
-    end if
+    ! Allocate array for sources
+    allocate(external_source(n))
 
-    ! Check for external source file
-    if (check_for_node(node_source, "file")) then
-      ! Copy path of source file
-      call get_node_value(node_source, "file", path_source)
+    ! Read each source
+    do i = 1, n
+      ! Get pointer to source
+      call get_list_item(node_source_list, i, node_source)
 
-      ! Check if source file exists
-      inquire(FILE=path_source, EXIST=file_exists)
-      if (.not. file_exists) then
-        call fatal_error("Binary source file '" // trim(path_source) &
-             &// "' does not exist!")
+      ! Check if we want to write out source
+      if (check_for_node(node_source, "write_initial")) then
+        call get_node_value(node_source, "write_initial", temp_str)
+        temp_str = to_lower(temp_str)
+        if (trim(temp_str) == 'true' .or. trim(temp_str) == '1') &
+             write_initial_source = .true.
       end if
 
-    else
-
-      ! Spatial distribution for external source
-      if (check_for_node(node_source, "space")) then
-
-        ! Get pointer to spatial distribution
-        call get_node_ptr(node_source, "space", node_dist)
-
-        ! Check for type of spatial distribution
-        type = ''
-        if (check_for_node(node_dist, "type")) &
-             call get_node_value(node_dist, "type", type)
-        select case (to_lower(type))
-        case ('box')
-          external_source % type_space = SRC_SPACE_BOX
-          coeffs_reqd = 6
-        case ('fission')
-          external_source % type_space = SRC_SPACE_FISSION
-          coeffs_reqd = 6
-        case ('point')
-          external_source % type_space = SRC_SPACE_POINT
-          coeffs_reqd = 3
-        case default
-          call fatal_error("Invalid spatial distribution for external source: "&
-               &// trim(type))
-        end select
-
-        ! Determine number of parameters specified
-        if (check_for_node(node_dist, "parameters")) then
-          n = get_arraysize_double(node_dist, "parameters")
-        else
-          n = 0
-        end if
-
-        ! Read parameters for spatial distribution
-        if (n < coeffs_reqd) then
-          call fatal_error("Not enough parameters specified for spatial &
-               &distribution of external source.")
-        elseif (n > coeffs_reqd) then
-          call fatal_error("Too many parameters specified for spatial &
-               &distribution of external source.")
-        elseif (n > 0) then
-          allocate(external_source % params_space(n))
-          call get_node_array(node_dist, "parameters", &
-               external_source % params_space)
-        end if
+      ! Check for source strength
+      if (check_for_node(node_source, "strength")) then
+        call get_node_value(node_source, "strength", external_source(i)%strength)
       else
-        call fatal_error("No spatial distribution specified for external &
-             &source.")
+        external_source(i)%strength = ONE
       end if
 
-      ! Determine external source angular distribution
-      if (check_for_node(node_source, "angle")) then
+      ! Check for external source file
+      if (check_for_node(node_source, "file")) then
+        ! Copy path of source file
+        call get_node_value(node_source, "file", path_source)
 
-        ! Get pointer to angular distribution
-        call get_node_ptr(node_source, "angle", node_dist)
-
-        ! Check for type of angular distribution
-        type = ''
-        if (check_for_node(node_dist, "type")) &
-             call get_node_value(node_dist, "type", type)
-        select case (to_lower(type))
-        case ('isotropic')
-          external_source % type_angle = SRC_ANGLE_ISOTROPIC
-          coeffs_reqd = 0
-        case ('monodirectional')
-          external_source % type_angle = SRC_ANGLE_MONO
-          coeffs_reqd = 3
-        case ('tabular')
-          external_source % type_angle = SRC_ANGLE_TABULAR
-        case default
-          call fatal_error("Invalid angular distribution for external source: "&
-               &// trim(type))
-        end select
-
-        ! Determine number of parameters specified
-        if (check_for_node(node_dist, "parameters")) then
-          n = get_arraysize_double(node_dist, "parameters")
-        else
-          n = 0
+        ! Check if source file exists
+        inquire(FILE=path_source, EXIST=file_exists)
+        if (.not. file_exists) then
+          call fatal_error("Binary source file '" // trim(path_source) &
+               &// "' does not exist!")
         end if
 
-        ! Read parameters for angle distribution
-        if (n < coeffs_reqd) then
-          call fatal_error("Not enough parameters specified for angle &
-               &distribution of external source.")
-        elseif (n > coeffs_reqd) then
-          call fatal_error("Too many parameters specified for angle &
-               &distribution of external source.")
-        elseif (n > 0) then
-          allocate(external_source % params_angle(n))
-          call get_node_array(node_dist, "parameters", &
-               external_source % params_angle)
-        end if
       else
-        ! Set default angular distribution isotropic
-        external_source % type_angle  = SRC_ANGLE_ISOTROPIC
-      end if
 
-      ! Determine external source energy distribution
-      if (check_for_node(node_source, "energy")) then
+        ! Spatial distribution for external source
+        if (check_for_node(node_source, "space")) then
 
-        ! Get pointer to energy distribution
-        call get_node_ptr(node_source, "energy", node_dist)
+          ! Get pointer to spatial distribution
+          call get_node_ptr(node_source, "space", node_space)
 
-        ! Check for type of energy distribution
-        type = ''
-        if (check_for_node(node_dist, "type")) &
-             call get_node_value(node_dist, "type", type)
-        select case (to_lower(type))
-        case ('monoenergetic')
-          external_source % type_energy = SRC_ENERGY_MONO
-          coeffs_reqd = 1
-        case ('maxwell')
-          external_source % type_energy = SRC_ENERGY_MAXWELL
-          coeffs_reqd = 1
-        case ('watt')
-          external_source % type_energy = SRC_ENERGY_WATT
-          coeffs_reqd = 2
-        case ('tabular')
-          external_source % type_energy = SRC_ENERGY_TABULAR
-        case default
-          call fatal_error("Invalid energy distribution for external source: " &
-               &// trim(type))
-        end select
+          ! Check for type of spatial distribution
+          type = ''
+          if (check_for_node(node_space, "type")) &
+               call get_node_value(node_space, "type", type)
+          select case (to_lower(type))
+          case ('cartesian')
+            allocate(CartesianIndependent :: external_source(i)%space)
 
-        ! Determine number of parameters specified
-        if (check_for_node(node_dist, "parameters")) then
-          n = get_arraysize_double(node_dist, "parameters")
+          case ('box')
+            allocate(SpatialBox :: external_source(i)%space)
+
+          case ('fission')
+            allocate(SpatialBox :: external_source(i)%space)
+            select type(space => external_source(i)%space)
+            type is (SpatialBox)
+              space%only_fissionable = .true.
+            end select
+
+          case ('point')
+            allocate(SpatialPoint :: external_source(i)%space)
+
+          case default
+            call fatal_error("Invalid spatial distribution for external source: "&
+                 // trim(type))
+          end select
+
+          select type (space => external_source(i)%space)
+          type is (CartesianIndependent)
+            ! Read distribution for x coordinate
+            if (check_for_node(node_space, "x")) then
+              call get_node_ptr(node_space, "x", node_dist)
+              call distribution_from_xml(space%x, node_dist)
+            else
+              allocate(Discrete :: space%x)
+              select type (dist => space%x)
+              type is (Discrete)
+                allocate(dist%x(1), dist%p(1))
+                dist%x(1) = ZERO
+                dist%p(1) = ONE
+              end select
+            end if
+
+            ! Read distribution for y coordinate
+            if (check_for_node(node_space, "y")) then
+              call get_node_ptr(node_space, "y", node_dist)
+              call distribution_from_xml(space%y, node_dist)
+            else
+              allocate(Discrete :: space%y)
+              select type (dist => space%y)
+              type is (Discrete)
+                allocate(dist%x(1), dist%p(1))
+                dist%x(1) = ZERO
+                dist%p(1) = ONE
+              end select
+            end if
+
+            if (check_for_node(node_space, "z")) then
+              call get_node_ptr(node_space, "z", node_dist)
+              call distribution_from_xml(space%z, node_dist)
+            else
+              allocate(Discrete :: space%z)
+              select type (dist => space%z)
+              type is (Discrete)
+                allocate(dist%x(1), dist%p(1))
+                dist%x(1) = ZERO
+                dist%p(1) = ONE
+              end select
+            end if
+
+          type is (SpatialBox)
+            ! Make sure correct number of parameters are given
+            if (get_arraysize_double(node_space, "parameters") /= 6) then
+              call fatal_error('Box/fission spatial source must have &
+                   &six parameters specified.')
+            end if
+
+            ! Read lower-right/upper-left coordinates
+            allocate(temp_real(6))
+            call get_node_array(node_space, "parameters", temp_real)
+            space%lower_left(:) = temp_real(1:3)
+            space%upper_right(:) = temp_real(4:6)
+            deallocate(temp_real)
+
+          type is (SpatialPoint)
+            ! Make sure correct number of parameters are given
+            if (get_arraysize_double(node_space, "parameters") /= 3) then
+              call fatal_error('Point spatial source must have &
+                   &three parameters specified.')
+            end if
+
+            ! Read location of point source
+            allocate(temp_real(3))
+            call get_node_array(node_space, "parameters", temp_real)
+            space%xyz(:) = temp_real
+            deallocate(temp_real)
+
+          end select
+
         else
-          n = 0
+          call fatal_error("No spatial distribution specified for external &
+               &source.")
         end if
 
-        ! Read parameters for energy distribution
-        if (n < coeffs_reqd) then
-          call fatal_error("Not enough parameters specified for energy &
-               &distribution of external source.")
-        elseif (n > coeffs_reqd) then
-          call fatal_error("Too many parameters specified for energy &
-               &distribution of external source.")
-        elseif (n > 0) then
-          allocate(external_source % params_energy(n))
-          call get_node_array(node_dist, "parameters", &
-               external_source % params_energy)
+        ! Determine external source angular distribution
+        if (check_for_node(node_source, "angle")) then
+
+          ! Get pointer to angular distribution
+          call get_node_ptr(node_source, "angle", node_angle)
+
+          ! Check for type of angular distribution
+          type = ''
+          if (check_for_node(node_angle, "type")) &
+               call get_node_value(node_angle, "type", type)
+          select case (to_lower(type))
+          case ('isotropic')
+            allocate(Isotropic :: external_source(i)%angle)
+
+          case ('monodirectional')
+            allocate(Monodirectional :: external_source(i)%angle)
+
+          case ('mu-phi')
+            allocate(PolarAzimuthal :: external_source(i)%angle)
+
+          case default
+            call fatal_error("Invalid angular distribution for external source: "&
+                 // trim(type))
+          end select
+
+          ! Read reference directional unit vector
+          if (check_for_node(node_angle, "reference_uvw")) then
+            n = get_arraysize_double(node_angle, "reference_uvw")
+            if (n /= 3) then
+              call fatal_error('Angular distribution reference direction must have &
+                   &three parameters specified.')
+            end if
+            call get_node_array(node_angle, "reference_uvw", &
+                 external_source(i)%angle%reference_uvw)
+          else
+            ! By default, set reference unit vector to be positive z-direction
+            external_source(i)%angle%reference_uvw(:) = [ZERO, ZERO, ONE]
+          end if
+
+          ! Read parameters for angle distribution
+          select type (angle => external_source(i)%angle)
+          type is (Monodirectional)
+            call get_node_array(node_angle, "reference_uvw", &
+                 external_source(i)%angle%reference_uvw)
+
+          type is (PolarAzimuthal)
+            if (check_for_node(node_angle, "mu")) then
+              call get_node_ptr(node_angle, "mu", node_dist)
+              call distribution_from_xml(angle%mu, node_dist)
+            else
+              allocate(Uniform :: angle%mu)
+              select type (mu => angle%mu)
+              type is (Uniform)
+                mu%a = -ONE
+                mu%b = ONE
+              end select
+            end if
+
+            if (check_for_node(node_angle, "phi")) then
+              call get_node_ptr(node_angle, "phi", node_dist)
+              call distribution_from_xml(angle%phi, node_dist)
+            else
+              allocate(Uniform :: angle%phi)
+              select type (phi => angle%phi)
+              type is (Uniform)
+                phi%a = ZERO
+                phi%b = TWO*PI
+              end select
+            end if
+          end select
+
+        else
+          ! Set default angular distribution isotropic
+          allocate(Isotropic :: external_source(i)%angle)
+          external_source(i)%angle%reference_uvw(:) = [ZERO, ZERO, ONE]
         end if
-      else
-        ! Set default energy distribution to Watt fission spectrum
-        external_source % type_energy = SRC_ENERGY_WATT
-        allocate(external_source % params_energy(2))
-        external_source % params_energy = (/ 0.988_8, 2.249_8 /)
+
+        ! Determine external source energy distribution
+        if (check_for_node(node_source, "energy")) then
+          call get_node_ptr(node_source, "energy", node_dist)
+          call distribution_from_xml(external_source(i)%energy, node_dist)
+        else
+          ! Default to a Watt spectrum with parameters 0.988 MeV and 2.249 MeV^-1
+          allocate(Watt :: external_source(i)%energy)
+          select type(energy => external_source(i)%energy)
+          type is (Watt)
+            energy%a = 0.988_8
+            energy%b = 2.249_8
+          end select
+        end if
       end if
-    end if
+    end do
 
     ! Survival biasing
     if (check_for_node(doc, "survival_biasing")) then
@@ -926,7 +996,7 @@ contains
           ! check to make sure a nuclide is specified
           if (.not. check_for_node(node_scatterer, "nuclide")) then
             call fatal_error("No nuclide specified for scatterer " &
-                 &// trim(to_str(i)) // " in settings.xml file!")
+                 // trim(to_str(i)) // " in settings.xml file!")
           end if
           call get_node_value(node_scatterer, "nuclide", &
                nuclides_0K(i) % nuclide)
@@ -940,7 +1010,7 @@ contains
           if (.not. check_for_node(node_scatterer, "xs_label")) then
             call fatal_error("Must specify the temperature dependent name of &
                  &scatterer " // trim(to_str(i)) &
-                 &// " given in cross_sections.xml")
+                 // " given in cross_sections.xml")
           end if
           call get_node_value(node_scatterer, "xs_label", &
                nuclides_0K(i) % name)
@@ -948,7 +1018,7 @@ contains
           ! check to make sure 0K xs name for which method is applied is given
           if (.not. check_for_node(node_scatterer, "xs_label_0K")) then
             call fatal_error("Must specify the 0K name of scatterer " &
-                 &// trim(to_str(i)) // " given in cross_sections.xml")
+                 // trim(to_str(i)) // " given in cross_sections.xml")
           end if
           call get_node_value(node_scatterer, "xs_label_0K", &
                nuclides_0K(i) % name_0K)
@@ -1008,7 +1078,7 @@ contains
         default_expand = JENDL_40
       case default
         call fatal_error("Unknown natural element expansion option: " &
-             &// trim(temp_str))
+             // trim(temp_str))
       end select
     end if
 
@@ -1025,8 +1095,7 @@ contains
   subroutine read_geometry_xml()
 
     integer :: i, j, k, m, i_x, i_a, input_index
-    integer :: n
-    integer :: n_x, n_y, n_z, n_rings, n_rlats, n_hlats
+    integer :: n, n_mats, n_x, n_y, n_z, n_rings, n_rlats, n_hlats
     integer :: universe_num
     integer :: n_cells_in_univ
     integer :: coeffs_reqd
@@ -1037,7 +1106,8 @@ contains
     logical :: boundary_exists
     character(MAX_LINE_LEN) :: filename
     character(MAX_WORD_LEN) :: word
-    character(1000) :: region_spec
+    character(MAX_WORD_LEN), allocatable :: sarray(:)
+    character(REGION_SPEC_LEN) :: region_spec
     type(Cell),     pointer :: c
     class(Surface), pointer :: s
     class(Lattice), pointer :: lat
@@ -1092,8 +1162,9 @@ contains
     do i = 1, n_cells
       c => cells(i)
 
-      ! Initialize the number of cell instances - this is a base case for distribcells
+      ! Initialize distribcell instances and distribcell index
       c % instances = 0
+      c % distribcell_index = NONE
 
       ! Get pointer to i-th cell node
       call get_list_item(node_cell_list, i, node_cell)
@@ -1124,40 +1195,54 @@ contains
       ! Check to make sure 'id' hasn't been used
       if (cell_dict % has_key(c % id)) then
         call fatal_error("Two or more cells use the same unique ID: " &
-             &// to_str(c % id))
+             // to_str(c % id))
       end if
 
       ! Read material
-      word = ''
-      if (check_for_node(node_cell, "material")) &
-           call get_node_value(node_cell, "material", word)
-      select case(to_lower(word))
-      case ('void')
-        c % material = MATERIAL_VOID
+      if (check_for_node(node_cell, "material")) then
+        n_mats = get_arraysize_string(node_cell, "material")
 
-      case ('')
-        ! This case is called if no material was specified
-        c % material = NONE
+        if (n_mats > 0) then
+          allocate(sarray(n_mats))
+          call get_node_array(node_cell, "material", sarray)
 
-      case default
-        c % material = int(str_to_int(word), 4)
+          allocate(c % material(n_mats))
+          do j = 1, n_mats
+            select case(trim(to_lower(sarray(j))))
+            case ('void')
+              c % material(j) = MATERIAL_VOID
+            case default
+              c % material(j) = int(str_to_int(sarray(j)), 4)
 
-        ! Check for error
-        if (c % material == ERROR_INT) then
-          call fatal_error("Invalid material specified on cell " &
-               &// to_str(c % id))
+              ! Check for error
+              if (c % material(j) == ERROR_INT) then
+                call fatal_error("Invalid material specified on cell " &
+                     // to_str(c % id))
+              end if
+            end select
+          end do
+
+          deallocate(sarray)
+
+        else
+          allocate(c % material(1))
+          c % material(1) = NONE
         end if
-      end select
+
+      else
+        allocate(c % material(1))
+        c % material(1) = NONE
+      end if
 
       ! Check to make sure that either material or fill was specified
-      if (c % material == NONE .and. c % fill == NONE) then
+      if (c % material(1) == NONE .and. c % fill == NONE) then
         call fatal_error("Neither material nor fill was specified for cell " &
-             &// trim(to_str(c % id)))
+             // trim(to_str(c % id)))
       end if
 
       ! Check to make sure that both material and fill haven't been
       ! specified simultaneously
-      if (c % material /= NONE .and. c % fill /= NONE) then
+      if (c % material(1) /= NONE .and. c % fill /= NONE) then
         call fatal_error("Cannot specify material and fill simultaneously")
       end if
 
@@ -1212,7 +1297,7 @@ contains
         n = get_arraysize_double(node_cell, "rotation")
         if (n /= 3) then
           call fatal_error("Incorrect number of rotation parameters on cell " &
-               &// to_str(c % id))
+               // to_str(c % id))
         end if
 
         ! Copy rotation angles in x,y,z directions
@@ -1240,7 +1325,7 @@ contains
         ! another universe
         if (c % fill == NONE) then
           call fatal_error("Cannot apply a translation to cell " &
-               &// trim(to_str(c % id)) // " because it is not filled with &
+               // trim(to_str(c % id)) // " because it is not filled with &
                &another universe")
         end if
 
@@ -1356,7 +1441,7 @@ contains
       ! Check to make sure 'id' hasn't been used
       if (surface_dict % has_key(s%id)) then
         call fatal_error("Two or more surfaces use the same unique ID: " &
-             &// to_str(s%id))
+             // to_str(s%id))
       end if
 
       ! Copy surface name
@@ -1371,10 +1456,10 @@ contains
       n = get_arraysize_double(node_surf, "coeffs")
       if (n < coeffs_reqd) then
         call fatal_error("Not enough coefficients specified for surface: " &
-             &// trim(to_str(s%id)))
+             // trim(to_str(s%id)))
       elseif (n > coeffs_reqd) then
         call fatal_error("Too many coefficients specified for surface: " &
-             &// trim(to_str(s%id)))
+             // trim(to_str(s%id)))
       end if
 
       allocate(coeffs(n))
@@ -1500,7 +1585,7 @@ contains
       ! Check to make sure 'id' hasn't been used
       if (lattice_dict % has_key(lat % id)) then
         call fatal_error("Two or more lattices use the same unique ID: " &
-             &// to_str(lat % id))
+             // to_str(lat % id))
       end if
 
       ! Copy lattice name
@@ -1628,7 +1713,7 @@ contains
       ! Check to make sure 'id' hasn't been used
       if (lattice_dict % has_key(lat % id)) then
         call fatal_error("Two or more lattices use the same unique ID: " &
-             &// to_str(lat % id))
+             // to_str(lat % id))
       end if
 
       ! Copy lattice name
@@ -1882,7 +1967,7 @@ contains
       ! Check to make sure 'id' hasn't been used
       if (material_dict % has_key(mat % id)) then
         call fatal_error("Two or more materials use the same unique ID: " &
-             &// to_str(mat % id))
+             // to_str(mat % id))
       end if
 
       ! Copy material name
@@ -1905,7 +1990,7 @@ contains
         call get_node_ptr(node_mat, "density", node_dens)
       else
         call fatal_error("Must specify density element in material " &
-             &// trim(to_str(mat % id)))
+             // trim(to_str(mat % id)))
       end if
 
       ! Initialize value to zero
@@ -1942,7 +2027,7 @@ contains
         sum_density = .false.
         if (val <= ZERO) then
           call fatal_error("Need to specify a positive density on material " &
-               &// trim(to_str(mat % id)) // ".")
+               // trim(to_str(mat % id)) // ".")
         end if
 
         ! Adjust material density based on specified units
@@ -1957,7 +2042,7 @@ contains
           mat % density = 1.0e-24_8 * val
         case default
           call fatal_error("Unkwown units '" // trim(units) &
-               &// "' specified on material " // trim(to_str(mat % id)))
+               // "' specified on material " // trim(to_str(mat % id)))
         end select
       end if
 
@@ -1965,9 +2050,9 @@ contains
       ! READ AND PARSE <nuclide> TAGS
 
       ! Check to ensure material has at least one nuclide
-      if ((.not. check_for_node(node_mat, "nuclide") .and. &
-           .not. check_for_node(node_mat, "element")) .and. &
-           (.not. check_for_node(node_mat, "macroscopic"))) then
+      if (.not. check_for_node(node_mat, "nuclide") .and. &
+           .not. check_for_node(node_mat, "element") .and. &
+           .not. check_for_node(node_mat, "macroscopic")) then
         call fatal_error("No macroscopic data, nuclides or natural elements &
                          &specified on material " // trim(to_str(mat % id)))
       end if
@@ -1976,23 +2061,23 @@ contains
       ! them as nuclides. This is all really a facade so the user thinks they
       ! are entering in macroscopic data but the code treats them the same
       ! as nuclides internally.
-      ! Get pointer list of XML <nuclide>
+      ! Get pointer list of XML <macroscopic>
       call get_node_list(node_mat, "macroscopic", node_macro_list)
       if (get_list_size(node_macro_list) > 1) then
         call fatal_error("Only one macroscopic object permitted per material, " &
-             &// trim(to_str(mat % id)))
+             // trim(to_str(mat % id)))
       else if (get_list_size(node_macro_list) == 1) then
 
         call get_list_item(node_macro_list, 1, node_nuc)
 
         ! Check for empty name on nuclide
-        if (.not.check_for_node(node_nuc, "name")) then
+        if (.not. check_for_node(node_nuc, "name")) then
           call fatal_error("No name specified on macroscopic data in material " &
-               &// trim(to_str(mat % id)))
+               // trim(to_str(mat % id)))
         end if
 
         ! Check for cross section
-        if (.not.check_for_node(node_nuc, "xs")) then
+        if (.not. check_for_node(node_nuc, "xs")) then
           if (default_xs == '') then
             call fatal_error("No cross section specified for macroscopic data &
                  & in material " // trim(to_str(mat % id)))
@@ -2032,7 +2117,7 @@ contains
           call list_density % append(ONE)
         else
           call fatal_error("Units can only be macro for macroscopic data " &
-               &// trim(name))
+               // trim(name))
         end if
       else
 
@@ -2045,13 +2130,13 @@ contains
           call get_list_item(node_nuc_list, j, node_nuc)
 
           ! Check for empty name on nuclide
-          if (.not.check_for_node(node_nuc, "name")) then
+          if (.not. check_for_node(node_nuc, "name")) then
             call fatal_error("No name specified on nuclide in material " &
-                 &// trim(to_str(mat % id)))
+                 // trim(to_str(mat % id)))
           end if
 
           ! Check for cross section
-          if (.not.check_for_node(node_nuc, "xs")) then
+          if (.not. check_for_node(node_nuc, "xs")) then
             if (default_xs == '') then
               call fatal_error("No cross section specified for nuclide in &
                    &material " // trim(to_str(mat % id)))
@@ -2075,10 +2160,10 @@ contains
           if (units == 'macro') then
             call list_density % append(ONE)
           else
-            if (.not.check_for_node(node_nuc, "ao") .and. &
-                 .not.check_for_node(node_nuc, "wo")) then
+            if (.not. check_for_node(node_nuc, "ao") .and. &
+                 .not. check_for_node(node_nuc, "wo")) then
               call fatal_error("No atom or weight percent specified for nuclide " &
-                   &// trim(name))
+                   // trim(name))
             elseif (check_for_node(node_nuc, "ao") .and. &
                     check_for_node(node_nuc, "wo")) then
               call fatal_error("Cannot specify both atom and weight percents for a &
@@ -2107,9 +2192,9 @@ contains
         call get_list_item(node_ele_list, j, node_ele)
 
         ! Check for empty name on natural element
-        if (.not.check_for_node(node_ele, "name")) then
+        if (.not. check_for_node(node_ele, "name")) then
           call fatal_error("No name specified on nuclide in material " &
-               &// trim(to_str(mat % id)))
+               // trim(to_str(mat % id)))
         end if
         call get_node_value(node_ele, "name", name)
 
@@ -2127,10 +2212,10 @@ contains
 
         ! Check if no atom/weight percents were specified or if both atom and
         ! weight percents were specified
-        if (.not.check_for_node(node_ele, "ao") .and. &
-             .not.check_for_node(node_ele, "wo")) then
+        if (.not. check_for_node(node_ele, "ao") .and. &
+             .not. check_for_node(node_ele, "wo")) then
           call fatal_error("No atom or weight percent specified for element " &
-               &// trim(name))
+               // trim(name))
         elseif (check_for_node(node_ele, "ao") .and. &
                 check_for_node(node_ele, "wo")) then
           call fatal_error("Cannot specify both atom and weight percents for &
@@ -2190,7 +2275,7 @@ contains
         name = trim(list_names % get_item(j))
         if (.not. xs_listing_dict % has_key(to_lower(name))) then
           call fatal_error("Could not find nuclide " // trim(name) &
-               &// " in cross_sections data file!")
+               // " in cross_sections data file!")
         end if
 
         if (run_CE) then
@@ -2198,7 +2283,7 @@ contains
           n = len_trim(name)
           if (name(n:n) /= 'c') then
             call fatal_error("Cross-section table " // trim(name) &
-                 &// " is not a continuous-energy neutron table.")
+                 // " is not a continuous-energy neutron table.")
           end if
         end if
 
@@ -2237,7 +2322,7 @@ contains
       if (.not. (all(mat % atom_density >= ZERO) .or. &
            all(mat % atom_density <= ZERO))) then
         call fatal_error("Cannot mix atom and weight percents in material " &
-             &// to_str(mat % id))
+             // to_str(mat % id))
       end if
 
       ! Determine density if it is a sum value
@@ -2272,8 +2357,8 @@ contains
             call get_list_item(node_sab_list, j, node_sab)
 
             ! Determine name of S(a,b) table
-            if (.not.check_for_node(node_sab, "name") .or. &
-                 .not.check_for_node(node_sab, "xs")) then
+            if (.not. check_for_node(node_sab, "name") .or. &
+                 .not. check_for_node(node_sab, "xs")) then
               call fatal_error("Need to specify <name> and <xs> for S(a,b) &
                    &table.")
             end if
@@ -2285,7 +2370,7 @@ contains
             ! Check that this nuclide is listed in the cross_sections.xml file
             if (.not. xs_listing_dict % has_key(to_lower(name))) then
               call fatal_error("Could not find S(a,b) table " // trim(name) &
-                   &// " in cross_sections.xml file!")
+                   // " in cross_sections.xml file!")
             end if
 
             ! Find index in xs_listing and set the name and alias according to the
@@ -2447,7 +2532,7 @@ contains
       ! Check to make sure 'id' hasn't been used
       if (mesh_dict % has_key(m % id)) then
         call fatal_error("Two or more meshes use the same unique ID: " &
-             &// to_str(m % id))
+             // to_str(m % id))
       end if
 
       ! Read mesh type
@@ -2503,8 +2588,8 @@ contains
       end if
 
       ! Make sure either upper-right or width was specified
-      if (.not.check_for_node(node_mesh, "upper_right") .and. &
-           .not.check_for_node(node_mesh, "width")) then
+      if (.not. check_for_node(node_mesh, "upper_right") .and. &
+           .not. check_for_node(node_mesh, "width")) then
         call fatal_error("Must specify either <upper_right> and <width> on a &
              &tally mesh.")
       end if
@@ -2588,7 +2673,7 @@ contains
       ! Check to make sure 'id' hasn't been used
       if (tally_dict % has_key(t % id)) then
         call fatal_error("Two or more tallies use the same unique ID: " &
-             &// to_str(t % id))
+             // to_str(t % id))
       end if
 
       ! Copy tally name
@@ -2629,7 +2714,7 @@ contains
             end if
           else
             call fatal_error("Bins not set in filter on tally " &
-                 &// trim(to_str(t % id)))
+                 // trim(to_str(t % id)))
           end if
 
           ! Determine type of filter
@@ -2721,7 +2806,7 @@ contains
               m => meshes(i_mesh)
             else
               call fatal_error("Could not find mesh " // trim(to_str(id)) &
-                   &// " specified on tally " // trim(to_str(t % id)))
+                   // " specified on tally " // trim(to_str(t % id)))
             end if
 
             ! Determine number of bins -- this is assuming that the tally is
@@ -2905,8 +2990,8 @@ contains
           case default
             ! Specified tally filter is invalid, raise error
             call fatal_error("Unknown filter type '" &
-                 &// trim(temp_str) // "' on tally " &
-                 &// trim(to_str(t % id)) // ".")
+                 // trim(temp_str) // "' on tally " &
+                 // trim(to_str(t % id)) // ".")
 
           end select
 
@@ -3002,8 +3087,8 @@ contains
             ! Check if no nuclide was found
             if (.not. associated(pair_list)) then
               call fatal_error("Could not find the nuclide " &
-                   &// trim(word) // " specified in tally " &
-                   &// trim(to_str(t % id)) // " in any material.")
+                   // trim(word) // " specified in tally " &
+                   // trim(to_str(t % id)) // " in any material.")
             end if
             deallocate(pair_list)
 
@@ -3071,12 +3156,12 @@ contains
                 ! maximum order.
                 ! The above scheme will essentially take the absolute value
                 if (master) call warning("Invalid scattering order of " &
-                     &// trim(to_str(n_order)) // " requested. Setting to the &
+                     // trim(to_str(n_order)) // " requested. Setting to the &
                      &maximum permissible value, " &
-                     &// trim(to_str(MAX_ANG_ORDER)))
+                     // trim(to_str(MAX_ANG_ORDER)))
                 n_order = MAX_ANG_ORDER
                 sarray(j) = trim(MOMENT_STRS(imomstr)) &
-                     &// trim(to_str(MAX_ANG_ORDER))
+                     // trim(to_str(MAX_ANG_ORDER))
               end if
               ! Find total number of bins for this case
               if (imomstr >= YN_LOC) then
@@ -3138,9 +3223,9 @@ contains
                   ! maximum order.
                   ! The above scheme will essentially take the absolute value
                   if (master) call warning("Invalid scattering order of " &
-                       &// trim(to_str(n_order)) // " requested. Setting to &
+                       // trim(to_str(n_order)) // " requested. Setting to &
                        &the maximum permissible value, " &
-                       &// trim(to_str(MAX_ANG_ORDER)))
+                       // trim(to_str(MAX_ANG_ORDER)))
                   n_order = MAX_ANG_ORDER
                 end if
                 score_name = trim(MOMENT_N_STRS(imomstr)) // "n"
@@ -3298,19 +3383,13 @@ contains
           case ('n4n', '(n,4n)')
             t % score_bins(j) = N_4N
 
-            ! Disallow for MG mode since data not present
-            if (.not. run_CE) then
-              call fatal_error("Cannot tally (n,4n) reaction rate in &
-                               &multi-group mode")
-            end if
-
           case ('absorption')
             t % score_bins(j) = SCORE_ABSORPTION
             if (t % find_filter(FILTER_ENERGYOUT) > 0) then
               call fatal_error("Cannot tally absorption rate with an outgoing &
                    &energy filter.")
             end if
-          case ('fission')
+          case ('fission', '18')
             t % score_bins(j) = SCORE_FISSION
             if (t % find_filter(FILTER_ENERGYOUT) > 0) then
               call fatal_error("Cannot tally fission rate with an outgoing &
@@ -3479,13 +3558,13 @@ contains
                 t % score_bins(j) = MT
               else
                 call fatal_error("Invalid MT on <scores>: " &
-                     &// trim(sarray(l)))
+                     // trim(sarray(l)))
               end if
 
             else
               ! Specified score was not an integer
               call fatal_error("Unknown scoring function: " &
-                   &// trim(sarray(l)))
+                   // trim(sarray(l)))
             end if
 
           end select
@@ -3493,10 +3572,10 @@ contains
           ! Do a check at the end (instead of for every case) to make sure
           ! the tallies are compatible with MG mode where we have less detailed
           ! nuclear data
-            if (.not. run_CE .and. t % score_bins(j) > 0) then
-              call fatal_error("Cannot tally " // trim(score_name) // &
-                               " reaction rate in multi-group mode")
-            end if
+          if (.not. run_CE .and. t % score_bins(j) > 0) then
+            call fatal_error("Cannot tally " // trim(score_name) // &
+                             " reaction rate in multi-group mode")
+          end if
         end do
 
         t % n_score_bins = n_scores
@@ -3504,9 +3583,35 @@ contains
 
         ! Deallocate temporary string array of scores
         deallocate(sarray)
+
+        ! Check that no duplicate scores exist
+        j = 1
+        do while (j < n_scores)
+          ! Determine number of bins for scores with expansions
+          n_order = t % moment_order(j)
+          select case (t % score_bins(j))
+          case (SCORE_SCATTER_PN, SCORE_NU_SCATTER_PN)
+            n_bins = n_order + 1
+          case (SCORE_FLUX_YN, SCORE_TOTAL_YN, SCORE_SCATTER_YN, &
+               SCORE_NU_SCATTER_YN)
+            n_bins = (n_order + 1)**2
+          case default
+            n_bins = 1
+          end select
+
+          do k = j + n_bins, n_scores
+            if (t % score_bins(j) == t % score_bins(k) .and. &
+                 t % moment_order(j) == t % moment_order(k)) then
+              call fatal_error("Duplicate score of type '" // trim(&
+                   reaction_name(t % score_bins(j))) // "' found in tally " &
+                   // trim(to_str(t % id)))
+            end if
+          end do
+          j = j + n_bins
+        end do
       else
         call fatal_error("No <scores> specified on tally " &
-             &// trim(to_str(t % id)) // ".")
+             // trim(to_str(t % id)) // ".")
       end if
 
       ! If settings.xml trigger is turned on, create tally triggers
@@ -3767,7 +3872,7 @@ contains
     inquire(FILE=filename, EXIST=file_exists)
     if (.not. file_exists) then
       call fatal_error("Plots XML file '" // trim(filename) &
-           &// "' does not exist!")
+           // "' does not exist!")
     end if
 
     ! Display output message
@@ -3799,7 +3904,7 @@ contains
       ! Check to make sure 'id' hasn't been used
       if (plot_dict % has_key(pl % id)) then
         call fatal_error("Two or more plots use the same unique ID: " &
-             &// to_str(pl % id))
+             // to_str(pl % id))
       end if
 
       ! Copy plot type
@@ -3814,7 +3919,7 @@ contains
         pl % type = PLOT_TYPE_VOXEL
       case default
         call fatal_error("Unsupported plot type '" // trim(temp_str) &
-             &// "' in plot " // trim(to_str(pl % id)))
+             // "' in plot " // trim(to_str(pl % id)))
       end select
 
       ! Set output file path
@@ -3834,14 +3939,14 @@ contains
           call get_node_array(node_plot, "pixels", pl % pixels(1:2))
         else
           call fatal_error("<pixels> must be length 2 in slice plot " &
-               &// trim(to_str(pl % id)))
+               // trim(to_str(pl % id)))
         end if
       else if (pl % type == PLOT_TYPE_VOXEL) then
         if (get_arraysize_integer(node_plot, "pixels") == 3) then
           call get_node_array(node_plot, "pixels", pl % pixels(1:3))
         else
           call fatal_error("<pixels> must be length 3 in voxel plot " &
-               &// trim(to_str(pl % id)))
+               // trim(to_str(pl % id)))
         end if
       end if
 
@@ -3849,13 +3954,13 @@ contains
       if (check_for_node(node_plot, "background")) then
         if (pl % type == PLOT_TYPE_VOXEL) then
           if (master) call warning("Background color ignored in voxel plot " &
-               &// trim(to_str(pl % id)))
+               // trim(to_str(pl % id)))
         end if
         if (get_arraysize_integer(node_plot, "background") == 3) then
           call get_node_array(node_plot, "background", pl % not_found % rgb)
         else
           call fatal_error("Bad background RGB in plot " &
-               &// trim(to_str(pl % id)))
+               // trim(to_str(pl % id)))
         end if
       else
         pl % not_found % rgb = (/ 255, 255, 255 /)
@@ -3876,7 +3981,7 @@ contains
           pl % basis = PLOT_BASIS_YZ
         case default
           call fatal_error("Unsupported plot basis '" // trim(temp_str) &
-               &// "' in plot " // trim(to_str(pl % id)))
+               // "' in plot " // trim(to_str(pl % id)))
         end select
       end if
 
@@ -3885,7 +3990,7 @@ contains
         call get_node_array(node_plot, "origin", pl % origin)
       else
         call fatal_error("Origin must be length 3 in plot " &
-             &// trim(to_str(pl % id)))
+             // trim(to_str(pl % id)))
       end if
 
       ! Copy plotting width
@@ -3894,14 +3999,14 @@ contains
           call get_node_array(node_plot, "width", pl % width(1:2))
         else
           call fatal_error("<width> must be length 2 in slice plot " &
-               &// trim(to_str(pl % id)))
+               // trim(to_str(pl % id)))
         end if
       else if (pl % type == PLOT_TYPE_VOXEL) then
         if (get_arraysize_double(node_plot, "width") == 3) then
           call get_node_array(node_plot, "width", pl % width(1:3))
         else
           call fatal_error("<width> must be length 3 in voxel plot " &
-               &// trim(to_str(pl % id)))
+               // trim(to_str(pl % id)))
         end if
       end if
 
@@ -3911,7 +4016,7 @@ contains
 
         if (pl % level < 0) then
           call fatal_error("Bad universe level in plot " &
-               &// trim(to_str(pl % id)))
+               // trim(to_str(pl % id)))
         end if
       else
         pl % level = PLOT_LEVEL_LOWEST
@@ -3945,7 +4050,7 @@ contains
 
       case default
         call fatal_error("Unsupported plot color type '" // trim(temp_str) &
-             &// "' in plot " // trim(to_str(pl % id)))
+             // "' in plot " // trim(to_str(pl % id)))
       end select
 
       ! Get the number of <col_spec> nodes and get a list of them
@@ -3968,7 +4073,7 @@ contains
           ! Check and make sure 3 values are specified for RGB
           if (get_arraysize_double(node_col, "rgb") /= 3) then
             call fatal_error("Bad RGB in plot " &
-                 &// trim(to_str(pl % id)))
+                 // trim(to_str(pl % id)))
           end if
 
           ! Ensure that there is an id for this color specification
@@ -3987,7 +4092,7 @@ contains
               call get_node_array(node_col, "rgb", pl % colors(col_id) % rgb)
             else
               call fatal_error("Could not find cell " // trim(to_str(col_id)) &
-                   &// " specified in plot " // trim(to_str(pl % id)))
+                   // " specified in plot " // trim(to_str(pl % id)))
             end if
 
           else if (pl % color_by == PLOT_COLOR_MATS) then
@@ -3997,8 +4102,8 @@ contains
               call get_node_array(node_col, "rgb", pl % colors(col_id) % rgb)
             else
               call fatal_error("Could not find material " &
-                   &// trim(to_str(col_id)) // " specified in plot " &
-                   &// trim(to_str(pl % id)))
+                   // trim(to_str(col_id)) // " specified in plot " &
+                   // trim(to_str(pl % id)))
             end if
 
           end if
@@ -4012,7 +4117,7 @@ contains
 
         if (pl % type == PLOT_TYPE_VOXEL) then
           call warning("Meshlines ignored in voxel plot " &
-               &// trim(to_str(pl % id)))
+               // trim(to_str(pl % id)))
         end if
 
         select case(n_meshlines)
@@ -4046,7 +4151,7 @@ contains
               ! Check and make sure 3 values are specified for RGB
               if (get_arraysize_double(node_meshlines, "color") /= 3) then
                 call fatal_error("Bad RGB for meshlines color in plot " &
-                     &// trim(to_str(pl % id)))
+                     // trim(to_str(pl % id)))
               end if
 
               call get_node_array(node_meshlines, "color", &
@@ -4063,7 +4168,7 @@ contains
 
               if (.not. associated(ufs_mesh)) then
                 call fatal_error("No UFS mesh for meshlines on plot " &
-                     &// trim(to_str(pl % id)))
+                     // trim(to_str(pl % id)))
               end if
 
               pl % meshlines_mesh => ufs_mesh
@@ -4084,7 +4189,7 @@ contains
 
               if (.not. associated(entropy_mesh)) then
                 call fatal_error("No entropy mesh for meshlines on plot " &
-                     &// trim(to_str(pl % id)))
+                     // trim(to_str(pl % id)))
               end if
 
               if (.not. allocated(entropy_mesh % dimension)) then
@@ -4113,18 +4218,18 @@ contains
                 end if
               else
                 call fatal_error("Could not find mesh " &
-                     &// trim(to_str(meshid)) // " specified in meshlines for &
+                     // trim(to_str(meshid)) // " specified in meshlines for &
                      &plot " // trim(to_str(pl % id)))
               end if
 
             case default
               call fatal_error("Invalid type for meshlines on plot " &
-                    &// trim(to_str(pl % id)) // ": " // trim(meshtype))
+                    // trim(to_str(pl % id)) // ": " // trim(meshtype))
             end select
 
           case default
             call fatal_error("Mutliple meshlines specified in plot " &
-                 &// trim(to_str(pl % id)))
+                 // trim(to_str(pl % id)))
         end select
 
       end if
@@ -4136,13 +4241,13 @@ contains
 
         if (pl % type == PLOT_TYPE_VOXEL) then
           if (master) call warning("Mask ignored in voxel plot " &
-               &// trim(to_str(pl % id)))
+               // trim(to_str(pl % id)))
         end if
 
         select case(n_masks)
           case default
             call fatal_error("Mutliple masks specified in plot " &
-                 &// trim(to_str(pl % id)))
+                 // trim(to_str(pl % id)))
           case (1)
 
             ! Get pointer to mask
@@ -4153,7 +4258,7 @@ contains
             n_comp = get_arraysize_integer(node_mask, "components")
             if (n_comp == 0) then
               call fatal_error("Missing <components> in mask of plot " &
-                   &// trim(to_str(pl % id)))
+                   // trim(to_str(pl % id)))
             end if
             allocate(iarray(n_comp))
             call get_node_array(node_mask, "components", iarray)
@@ -4169,7 +4274,7 @@ contains
                   iarray(j) = cell_dict % get_key(col_id)
                 else
                   call fatal_error("Could not find cell " &
-                       &// trim(to_str(col_id)) // " specified in the mask in &
+                       // trim(to_str(col_id)) // " specified in the mask in &
                        &plot " // trim(to_str(pl % id)))
                 end if
 
@@ -4179,7 +4284,7 @@ contains
                   iarray(j) = material_dict % get_key(col_id)
                 else
                   call fatal_error("Could not find material " &
-                       &// trim(to_str(col_id)) // " specified in the mask in &
+                       // trim(to_str(col_id)) // " specified in the mask in &
                        &plot " // trim(to_str(pl % id)))
                 end if
 
@@ -4193,7 +4298,7 @@ contains
                   call get_node_array(node_mask, "background", pl % colors(j) % rgb)
                 else
                   call fatal_error("Missing <background> in mask of plot " &
-                       &// trim(to_str(pl % id)))
+                       // trim(to_str(pl % id)))
                 end if
               end if
             end do
@@ -4238,7 +4343,7 @@ contains
     if (.not. file_exists) then
       ! Could not find cross_sections.xml file
       call fatal_error("Cross sections XML file '" &
-           &// trim(path_cross_sections) // "' does not exist!")
+           // trim(path_cross_sections) // "' does not exist!")
     end if
 
     call write_message("Reading cross sections XML file...", 5)
@@ -4268,7 +4373,7 @@ contains
       filetype = ASCII
     else
       call fatal_error("Unknown filetype in cross_sections.xml: " &
-           &// trim(temp_str))
+           // trim(temp_str))
     end if
 
     ! copy default record length and entries for binary files
@@ -4332,7 +4437,7 @@ contains
       end if
 
       ! determine metastable state
-      if (.not.check_for_node(node_ace, "metastable")) then
+      if (.not. check_for_node(node_ace, "metastable")) then
         listing % metastable = .false.
       else
         listing % metastable = .true.
@@ -4366,8 +4471,8 @@ contains
     do i = 1, n_res_scatterers_total
       if (.not. xs_listing_dict % has_key(trim(nuclides_0K(i) % name_0K))) then
         call fatal_error("Could not find nuclide " &
-             &// trim(nuclides_0K(i) % name_0K) &
-             &// " in cross_sections.xml file!")
+             // trim(nuclides_0K(i) % name_0K) &
+             // " in cross_sections.xml file!")
       end if
     end do
 
@@ -4384,14 +4489,13 @@ contains
     type(Node), pointer :: doc => null()
     type(Node), pointer :: node_xsdata => null()
     type(NodeList), pointer :: node_xsdata_list => null()
-    ! character(MAX_LINE_LEN) :: temp_str
 
     ! Check if cross_sections.xml exists
     inquire(FILE=path_cross_sections, EXIST=file_exists)
     if (.not. file_exists) then
       ! Could not find cross_sections.xml file
       call fatal_error("Cross sections XML file '" &
-           &// trim(path_cross_sections) // "' does not exist!")
+           // trim(path_cross_sections) // "' does not exist!")
     end if
 
     call write_message("Reading cross sections XML file...", 5)
@@ -4416,7 +4520,7 @@ contains
 
     allocate(energy_bin_avg(energy_groups))
     do i = 1, energy_groups
-      energy_bin_avg(i) = 0.5_8 * (energy_bins(i) + energy_bins(i + 1))
+      energy_bin_avg(i) = HALF * (energy_bins(i) + energy_bins(i + 1))
     end do
 
     allocate(inverse_velocities(energy_groups))
@@ -4439,8 +4543,8 @@ contains
 
     ! Allocate xs_listings array
     if (n_listings == 0) then
-      call fatal_error("No XSDATA listings present in cross_sections.xml &
-           &file!")
+      call fatal_error("At least one <xsdata> element must be present in &
+                       &cross_sections.xml file!")
     else
       allocate(xs_listings(n_listings))
     end if
@@ -4473,7 +4577,7 @@ contains
       if (check_for_node(node_xsdata, "kT")) then
         call get_node_value(node_xsdata, "kT", listing % kT)
       else
-        listing % kT = 2.53E-8_8
+        listing % kT = 293.6_8 * K_BOLTZMANN
       end if
 
       ! determine type of cross section
