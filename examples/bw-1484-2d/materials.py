@@ -267,12 +267,12 @@ moderator[21].add_element(B, 0.997947*4.01830E-06, 'ao')
 moderator[21].add_element(Al, 1.1922E-04, 'ao')
 
 # Poison plate materials
-poison_plate[8] = openmc.Material(name='Poison plate 5 for core XIII')
-poison_plate[8].set_density('sum')
-poison_plate[8].add_element(B , 2.4368E-03, 'ao')
-poison_plate[8].add_element(Al, 5.9382E-02, 'ao')
-poison_plate[8].add_element(Fe, 4.6005E-05, 'ao')
-poison_plate[8].add_element(Si, 3.4304E-05, 'ao')
+poison_plate[13] = openmc.Material(name='Poison plate 5 for core XIII')
+poison_plate[13].set_density('sum')
+poison_plate[13].add_element(B , 2.4368E-03, 'ao')
+poison_plate[13].add_element(Al, 5.9382E-02, 'ao')
+poison_plate[13].add_element(Fe, 4.6005E-05, 'ao')
+poison_plate[13].add_element(Si, 3.4304E-05, 'ao')
 
 poison_plate[14] = openmc.Material(name='Poison plate 4 for core XIV')
 poison_plate[14].set_density('sum')
