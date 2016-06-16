@@ -11,7 +11,8 @@ except ImportError:
 
 kwargs = {'name': 'openmc',
           'version': '0.7.1',
-          'packages': ['openmc', 'openmc.mgxs', 'openmc.stats'],
+          'packages': ['openmc', 'openmc.data', 'openmc.mgxs', 'openmc.model',
+                       'openmc.stats'],
           'scripts': glob.glob('scripts/openmc-*'),
 
           # Metadata
@@ -36,7 +37,7 @@ if have_setuptools:
 
         # Optional dependencies
         'extras_require': {
-            'pandas': ['pandas'],
+            'pandas': ['pandas>=0.17.0'],
             'sparse' : ['scipy'],
             'vtk': ['vtk', 'silomesh'],
             'validate': ['lxml']

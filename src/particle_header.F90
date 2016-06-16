@@ -202,7 +202,7 @@ contains
       this % last_g       = int(src % E)
       this % E            = energy_bin_avg(this % g)
     end if
-    this % last_E       = src % E
+    this % last_E       = this % E
 
   end subroutine initialize_from_source
 
@@ -217,7 +217,7 @@ contains
     integer,         intent(in)    :: type
     logical,         intent(in)    :: run_CE
 
-    integer :: n
+    integer(8) :: n
 
     ! Check to make sure that the hard-limit on secondary particles is not
     ! exceeded.
