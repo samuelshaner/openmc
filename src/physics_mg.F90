@@ -171,6 +171,7 @@ contains
     type(Bank),     intent(inout) :: bank_array(:)
     integer(8),     intent(inout) :: size_bank
 
+    integer :: nu_d(MAX_DELAYED_GROUPS) ! number of delayed neutrons born
     integer :: i                        ! loop index
     integer :: nu                       ! actual number of neutrons produced
     integer :: ijk(3)                   ! indices in ufs mesh
@@ -209,6 +210,7 @@ contains
     ! Determine expected number of neutrons produced
     nu_t = p % wgt / keff * weight * &
          material_xs % nu_fission / material_xs % total
+
     ! Sample number of neutrons produced
     if (prn() > nu_t - int(nu_t)) then
       nu = int(nu_t)
@@ -234,6 +236,10 @@ contains
     ! Bank source neutrons
     if (nu == 0 .or. size_bank == size(bank_array)) return
 
+    ! Initialize counter of delayed neutrons encountered for each delayed group
+    ! to zero.
+    nu_d(:) = 0
+
     p % fission = .true. ! Fission neutrons will be banked
     do i = int(size_bank,4) + 1, int(min(size_bank + nu, int(size(bank_array),8)),4)
       ! Bank source neutrons by copying particle data
@@ -255,7 +261,16 @@ contains
       ! Sample secondary energy distribution for fission reaction and set energy
       ! in fission bank
       bank_array(i) % E = &
-           real(xs % sample_fission_energy(p % g, bank_array(i) % uvw), 8)
+           real(xs % sample_fission_energy(p % g, &
+           bank_array(i) % uvw, bank_array(i) % delayed_group), 8)
+
+      ! Set delayed group on particle too
+      p % delayed_group = bank_array(i) % delayed_group
+
+      ! Increment the number of neutrons born delayed
+      if (p % delayed_group > 0) then
+        nu_d(p % delayed_group) = nu_d(p % delayed_group) + 1
+      end if
     end do
 
     ! increment number of bank sites
@@ -264,6 +279,7 @@ contains
     ! Store total weight banked for analog fission tallies
     p % n_bank   = nu
     p % wgt_bank = nu/weight
+    p % n_delayed_bank(:) = nu_d(:)
 
   end subroutine create_fission_sites
 

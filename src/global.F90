@@ -120,16 +120,16 @@ module global
   type(MgxsContainer), target, allocatable :: macro_xs(:)
 
   ! Number of energy groups
-  integer :: energy_groups
+  integer :: num_energy_groups
+
+  ! Number of delayed groups
+  integer :: num_delayed_groups
 
   ! Energy group structure
   real(8), allocatable :: energy_bins(:)
 
   ! Midpoint of the energy group structure
   real(8), allocatable :: energy_bin_avg(:)
-
-  ! Inverse velocities of the energy groups (provided or estimated)
-  real(8), allocatable :: inverse_velocities(:)
 
   ! Maximum Data Order
   integer :: max_order

@@ -3073,8 +3073,8 @@ contains
             ! index is simply the group (after flipping for the different
             ! ordering of the library and tallying systems).
             if (.not. run_CE) then
-              if (n_words == energy_groups + 1) then
-                if (all(filt % bins == energy_bins(energy_groups + 1:1:-1))) &
+              if (n_words == num_energy_groups + 1) then
+                if (all(filt % bins == energy_bins(num_energy_groups + 1:1:-1))) &
                      then
                   filt % matches_transport_groups = .true.
                 end if
@@ -3099,8 +3099,8 @@ contains
             ! index is simply the group (after flipping for the different
             ! ordering of the library and tallying systems).
             if (.not. run_CE) then
-              if (n_words == energy_groups + 1) then
-                if (all(filt % bins == energy_bins(energy_groups + 1:1:-1))) &
+              if (n_words == num_energy_groups + 1) then
+                if (all(filt % bins == energy_bins(num_energy_groups + 1:1:-1))) &
                      then
                   filt % matches_transport_groups = .true.
                 end if
@@ -3114,14 +3114,6 @@ contains
           t % estimator = ESTIMATOR_ANALOG
 
         case ('delayedgroup')
-          ! Check to see if running in MG mode, because if so, the current
-          ! system isnt set up yet to support delayed group data and thus
-          ! these tallies
-          if (.not. run_CE) then
-            call fatal_error("delayedgroup filter on tally " &
-                             // trim(to_str(t % id)) // " not yet supported&
-                             & for multi-group mode.")
-          end if
 
           ! Allocate and declare the filter type
           allocate(DelayedGroupFilter::t % filters(j) % obj)
@@ -3650,12 +3642,6 @@ contains
             if (t % find_filter(FILTER_ENERGYOUT) > 0) then
               ! Set tally estimator to analog
               t % estimator = ESTIMATOR_ANALOG
-            end if
-
-            ! Disallow for MG mode since data not present
-            if (.not. run_CE) then
-              call fatal_error("Cannot tally delayed nu-fission rate in &
-                               &multi-group mode")
             end if
           case ('kappa-fission')
             t % score_bins(j) = SCORE_KAPPA_FISSION
@@ -4694,15 +4680,24 @@ contains
     ! Parse mgxs.xml file
     call open_xmldoc(doc, path_cross_sections)
 
-    if (check_for_node(doc, "groups")) then
+    if (check_for_node(doc, "energy_groups")) then
       ! Get neutron group count
-      call get_node_value(doc, "groups", energy_groups)
+      call get_node_value(doc, "energy_groups", num_energy_groups)
     else
-      call fatal_error("groups element must exist!")
+      call fatal_error("energy_groups element must exist!")
     end if
 
-    allocate(rev_energy_bins(energy_groups + 1))
-    allocate(energy_bins(energy_groups + 1))
+    if (check_for_node(doc, "delayed_groups")) then
+      ! Get neutron group count
+      call get_node_value(doc, "delayed_groups", num_delayed_groups)
+    else
+      num_delayed_groups = 1
+      call write_message("WARNING: delayed_groups element not provided so &
+           &number of delayed groups set to 1")
+    end if
+
+    allocate(rev_energy_bins(num_energy_groups + 1))
+    allocate(energy_bins(num_energy_groups + 1))
     if (check_for_node(doc, "group_structure")) then
       ! Get neutron group structure
       call get_node_array(doc, "group_structure", energy_bins)
@@ -4711,26 +4706,12 @@ contains
     end if
 
     ! First reverse the order of energy_groups
-    energy_bins = energy_bins(energy_groups + 1:1:-1)
+    energy_bins = energy_bins(num_energy_groups + 1:1:-1)
 
-    allocate(energy_bin_avg(energy_groups))
-    do i = 1, energy_groups
+    allocate(energy_bin_avg(num_energy_groups))
+    do i = 1, num_energy_groups
       energy_bin_avg(i) = HALF * (energy_bins(i) + energy_bins(i + 1))
     end do
-
-    allocate(inverse_velocities(energy_groups))
-    if (check_for_node(doc, "inverse_velocities")) then
-      ! Get inverse velocities
-      call get_node_array(doc, "inverse_velocities", inverse_velocities)
-    else
-      ! If not given, estimate them by using average energy in group which is
-      ! assumed to be the midpoint
-      do i = 1, energy_groups
-        inverse_velocities(i) = ONE / &
-             (sqrt(TWO * energy_bin_avg(i) / (MASS_NEUTRON_MEV)) * &
-              C_LIGHT * 100.0_8)
-      end do
-    end if
 
     ! Get node list of all <xsdata>
     call get_node_list(doc, "xsdata", node_xsdata_list)

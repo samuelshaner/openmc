@@ -13,6 +13,7 @@ module mgxs_header
   use string
   use xml_interface
 
+
 !===============================================================================
 ! MGXS contains the base mgxs data for a nuclide/material
 !===============================================================================
@@ -28,14 +29,17 @@ module mgxs_header
     integer :: scatt_type    ! either legendre, histogram, or tabular.
 
   contains
-    procedure(mgxs_init_file_), deferred :: init_file ! Initialize the data
-    procedure(mgxs_print_),    deferred  :: print     ! Writes object info
-    procedure(mgxs_get_xs_),   deferred  :: get_xs    ! Get the requested xs
-    procedure(mgxs_combine_),  deferred  :: combine   ! initializes object
+    procedure(mgxs_init_file_), deferred  :: init_file ! Initialize the data
+    procedure(mgxs_print_),     deferred  :: print     ! Writes object info
+    procedure(mgxs_get_xs_),    deferred  :: get_xs    ! Get the requested xs
+    procedure(mgxs_combine_),   deferred  :: combine   ! initializes object
+
     ! Sample the outgoing energy from a fission event
     procedure(mgxs_sample_fission_), deferred :: sample_fission_energy
+
     ! Sample the outgoing energy and angle from a scatter event
     procedure(mgxs_sample_scatter_), deferred :: sample_scatter
+
     ! Calculate the material specific MGXS data from the nuclides
     procedure(mgxs_calculate_xs_), deferred   :: calculate_xs
   end type Mgxs
@@ -53,62 +57,66 @@ module mgxs_header
 !===============================================================================
 
   abstract interface
-    subroutine mgxs_init_file_(this, node_xsdata, groups, get_kfiss, get_fiss, &
-                               max_order)
+    subroutine mgxs_init_file_(this, node_xsdata, energy_groups, &
+         delayed_groups, max_order)
+
       import Mgxs, Node
-      class(Mgxs), intent(inout)      :: this        ! Working Object
-      type(Node), pointer, intent(in) :: node_xsdata ! Data from MGXS xml
-      integer, intent(in)             :: groups      ! Number of Energy groups
-      logical, intent(in)             :: get_kfiss   ! Need Kappa-Fission?
-      logical, intent(in)             :: get_fiss    ! Should we get fiss data?
-      integer, intent(in)             :: max_order   ! Maximum requested order
+      class(Mgxs), intent(inout)      :: this           ! Working Object
+      type(Node), pointer, intent(in) :: node_xsdata    ! Data from MGXS xml
+      integer, intent(in)             :: energy_groups  ! Number of energy groups
+      integer, intent(in)             :: delayed_groups ! Number of delayed groups
+      integer, intent(in)             :: max_order      ! Maximum requested order
     end subroutine mgxs_init_file_
 
     subroutine mgxs_print_(this, unit)
       import Mgxs
-      class(Mgxs),intent(in)     :: this
+      class(Mgxs),intent(in)        :: this
       integer, optional, intent(in) :: unit
     end subroutine mgxs_print_
 
-    pure function mgxs_get_xs_(this,xstype,gin,gout,uvw,mu) result(xs)
+    pure function mgxs_get_xs_(this,xstype,gin,gout,uvw,mu,dg) result(xs)
       import Mgxs
       class(Mgxs), intent(in)       :: this
-      character(*), intent(in)      :: xstype ! Cross Section Type
-      integer, intent(in)           :: gin    ! Incoming Energy group
-      integer, optional, intent(in) :: gout   ! Outgoing Group
-      real(8), optional, intent(in) :: uvw(3) ! Requested Angle
+      character(*), intent(in)      :: xstype ! Cross section type
+      integer, intent(in)           :: gin    ! Incoming energy group
+      integer, optional, intent(in) :: gout   ! Outgoing group
+      real(8), optional, intent(in) :: uvw(3) ! Requested angle
       real(8), optional, intent(in) :: mu     ! Change in angle
+      integer, optional, intent(in) :: dg     ! Delayed group
       real(8)                       :: xs     ! Resultant xs
     end function mgxs_get_xs_
 
-    pure function mgxs_calc_f_(this,gin,gout,mu,uvw,iazi,ipol) result(f)
+    pure function mgxs_calc_f_(this,gin,gout,mu,uvw,iazi,ipol,dg) result(f)
       import Mgxs
       class(Mgxs), intent(in)       :: this
-      integer, intent(in)           :: gin   ! Incoming Energy Group
-      integer, intent(in)           :: gout  ! Outgoing Energy Group
-      real(8), intent(in)           :: mu    ! Angle of interest
+      integer, intent(in)           :: gin    ! Incoming energy group
+      integer, intent(in)           :: gout   ! Outgoing energy group
+      real(8), intent(in)           :: mu     ! Angle of interest
       real(8), intent(in), optional :: uvw(3) ! Direction vector
-      integer, intent(in), optional :: iazi ! Incoming Energy Group
-      integer, intent(in), optional :: ipol ! Outgoing Energy Group
-      real(8)                       :: f     ! Return value of f(mu)
+      integer, intent(in), optional :: iazi   ! Incoming energy group
+      integer, intent(in), optional :: ipol   ! Outgoing energy group
+      integer, intent(in), optional :: dg     ! Delayed group
+      real(8)                       :: f      ! Return value of f(mu)
 
     end function mgxs_calc_f_
 
-    subroutine mgxs_combine_(this, mat, nuclides, groups, max_order, scatt_type)
+    subroutine mgxs_combine_(this, mat, nuclides, energy_groups, delayed_groups, max_order, scatt_type)
       import Mgxs, Material, MgxsContainer
-      class(Mgxs),           intent(inout) :: this ! The Mgxs to initialize
-      type(Material), pointer,  intent(in) :: mat  ! base material
-      type(MgxsContainer), intent(in)      :: nuclides(:) ! List of nuclides to harvest from
-      integer, intent(in)                  :: groups     ! Number of E groups
-      integer, intent(in)                  :: max_order  ! Maximum requested order
-      integer, intent(in)                  :: scatt_type ! Legendre or Tabular Scatt?
+      class(Mgxs),           intent(inout) :: this          ! The Mgxs to initialize
+      type(Material), pointer,  intent(in) :: mat           ! base material
+      type(MgxsContainer), intent(in)      :: nuclides(:)   ! List of nuclides to harvest from
+      integer, intent(in)                  :: energy_groups ! Number of energy groups
+      integer, intent(in)                  :: delayed_groups ! Number of delayed groups
+      integer, intent(in)                  :: max_order     ! Maximum requested order
+      integer, intent(in)                  :: scatt_type    ! Legendre or Tabular Scatt?
     end subroutine mgxs_combine_
 
-    function mgxs_sample_fission_(this, gin, uvw) result(gout)
+    function mgxs_sample_fission_(this, gin, uvw, dg) result(gout)
       import Mgxs
       class(Mgxs), intent(in) :: this   ! Data to work with
       integer, intent(in)     :: gin    ! Incoming energy group
-      real(8), intent(in)     :: uvw(3) ! Particle Direction
+      real(8), intent(in)     :: uvw(3) ! Direction vector
+      integer, intent(inout)  :: dg     ! Delayed group
       integer                 :: gout   ! Sampled outgoing group
 
     end function mgxs_sample_fission_
@@ -140,13 +148,17 @@ module mgxs_header
   type, extends(Mgxs) :: MgxsIso
 
     ! Microscopic cross sections
-    real(8), allocatable :: total(:)        ! total cross section
-    real(8), allocatable :: absorption(:)   ! absorption cross section
-    class(ScattData), allocatable :: scatter ! scattering information
-    real(8), allocatable :: nu_fission(:)   ! fission matrix (Gout x Gin)
-    real(8), allocatable :: k_fission(:)    ! kappa-fission
-    real(8), allocatable :: fission(:)      ! neutron production
-    real(8), allocatable :: chi(:, :)        ! Fission Spectra
+    class(ScattData), allocatable :: scatter        ! Scattering information
+    real(8), allocatable :: total(:)                ! Total cross section
+    real(8), allocatable :: absorption(:)           ! Absorption cross section
+    real(8), allocatable :: delayed_nu_fission(:,:) ! Delayed fission matrix (Gin x Dg)
+    real(8), allocatable :: prompt_nu_fission(:)    ! Prompt fission vector (Gin)
+    real(8), allocatable :: kappa_fission(:)        ! Kappa-fission
+    real(8), allocatable :: fission(:)              ! Neutron production
+    real(8), allocatable :: decay_rate(:)           ! Delayed neutron precursor decay rate
+    real(8), allocatable :: velocity(:)             ! Neutron velocity
+    real(8), allocatable :: chi_delayed(:, :)       ! Delayed fission spectra
+    real(8), allocatable :: chi_prompt(:, :)        ! Prompt fission spectra
 
   contains
     procedure :: init_file   => mgxsiso_init_file ! Initialize Nuclidic MGXS Data
@@ -166,13 +178,18 @@ module mgxs_header
   type, extends(Mgxs) :: MgxsAngle
 
     ! Microscopic cross sections
-    real(8), allocatable :: total(:, :, :)        ! total cross section
-    real(8), allocatable :: absorption(:, :, :)   ! absorption cross section
-    type(ScattDataContainer), allocatable :: scatter(:, :) ! scattering information
-    real(8), allocatable :: nu_fission(:, :, :)   ! fission matrix (Gout x Gin)
-    real(8), allocatable :: k_fission(:, :, :)    ! kappa-fission
-    real(8), allocatable :: fission(:, :, :)      ! neutron production
-    real(8), allocatable :: chi(:, :, :, :)        ! Fission Spectra
+    type(ScattDataContainer), allocatable :: scatter(:, :) ! Scattering information
+    real(8), allocatable :: total(:, :, :)                 ! Total cross section
+    real(8), allocatable :: absorption(:, :, :)            ! Absorption cross section
+    real(8), allocatable :: delayed_nu_fission(:, :, :, :) ! Delayed fission matrix (Gout x Gin)
+    real(8), allocatable :: prompt_nu_fission(:, :, :)     ! Prompt fission matrix (Gout x Gin)
+    real(8), allocatable :: kappa_fission(:, :, :)         ! Kappa-fission
+    real(8), allocatable :: fission(:, :, :)               ! Neutron production
+    real(8), allocatable :: decay_rate(:, :, :)            ! Delayed neutron precursor decay rate
+    real(8), allocatable :: velocity(:, :, :)              ! Neutron velocity
+    real(8), allocatable :: chi_delayed(:, :, :, :)        ! Delayed fission spectra
+    real(8), allocatable :: chi_prompt(:, :, :, :)         ! Prompt fission spectra
+
     ! In all cases, right-most indices are theta, phi
     integer              :: n_pol         ! Number of polar angles
     integer              :: n_azi         ! Number of azimuthal angles
@@ -206,24 +223,30 @@ module mgxs_header
       ! Load the nuclide metadata
       call get_node_value(node_xsdata, "name", this % name)
       this % name = to_lower(this % name)
+
       if (check_for_node(node_xsdata, "kT")) then
         call get_node_value(node_xsdata, "kT", this % kT)
       else
         this % kT = ZERO
       end if
+
       if (check_for_node(node_xsdata, "zaid")) then
         call get_node_value(node_xsdata, "zaid", this % zaid)
       else
         this % zaid = 0
       end if
+
       if (check_for_node(node_xsdata, "awr")) then
         call get_node_value(node_xsdata, "awr", this % awr)
       else
         this % awr = -ONE
       end if
+
       if (check_for_node(node_xsdata, "scatt_type")) then
+
         call get_node_value(node_xsdata, "scatt_type", temp_str)
         temp_str = trim(to_lower(temp_str))
+
         if (temp_str == 'legendre') then
           this % scatt_type = ANGLE_LEGENDRE
         else if (temp_str == 'histogram') then
@@ -233,145 +256,380 @@ module mgxs_header
         else
           call fatal_error("Invalid scatt_type option!")
         end if
+
       else
         this % scatt_type = ANGLE_LEGENDRE
       end if
 
       if (check_for_node(node_xsdata, "fissionable")) then
+
         call get_node_value(node_xsdata, "fissionable", temp_str)
         temp_str = to_lower(temp_str)
+
         if (trim(temp_str) == 'true' .or. trim(temp_str) == '1') then
           this % fissionable = .true.
         else
           this % fissionable = .false.
         end if
+
       else
         call fatal_error("Fissionable element must be set!")
       end if
 
     end subroutine mgxs_init_file
 
-    subroutine mgxsiso_init_file(this, node_xsdata, groups, get_kfiss, get_fiss, &
-                                 max_order)
-      class(MgxsIso), intent(inout)   :: this        ! Working Object
-      type(Node), pointer, intent(in) :: node_xsdata ! Data from MGXS xml
-      integer, intent(in)             :: groups      ! Number of Energy groups
-      logical, intent(in)             :: get_kfiss   ! Need Kappa-Fission?
-      logical, intent(in)             :: get_fiss    ! Need fiss data?
-      integer, intent(in)             :: max_order   ! Maximum requested order
+    subroutine mgxsiso_init_file(this, node_xsdata, energy_groups, &
+         delayed_groups, max_order)
+
+      class(MgxsIso), intent(inout)   :: this           ! Working Object
+      type(Node), pointer, intent(in) :: node_xsdata    ! Data from MGXS xml
+      integer, intent(in)             :: energy_groups  ! Number of energy groups
+      integer, intent(in)             :: delayed_groups ! Number of delayed groups
+      integer, intent(in)             :: max_order      ! Maximum requested order
 
       type(Node), pointer     :: node_legendre_mu
       character(MAX_LINE_LEN) :: temp_str
       logical                 :: enable_leg_mu
-      real(8), allocatable    :: temp_arr(:), temp_2d(:, :)
+      real(8), allocatable    :: temp_arr(:), temp_2d(:, :), temp_beta(:)
       real(8), allocatable    :: temp_mult(:, :)
       real(8), allocatable    :: scatt_coeffs(:, :, :)
       real(8), allocatable    :: input_scatt(:, :, :)
       real(8), allocatable    :: temp_scatt(:, :, :)
       real(8)                 :: dmu, mu, norm
-      integer                 :: order, order_dim, gin, gout, l, arr_len
+      integer                 :: order, order_dim, gin, gout, l, arr_len, dg
       integer                 :: legendre_mu_points, imu
 
       ! Call generic data gathering routine (will populate the metadata)
       call mgxs_init_file(this, node_xsdata)
 
-      ! Load the more specific data
-      allocate(this % nu_fission(groups))
-      allocate(this % chi(groups,groups))
+      ! Allocate data for all the cross sections
+      allocate(this % total(energy_groups))
+      allocate(this % absorption(energy_groups))
+      allocate(this % delayed_nu_fission(energy_groups, delayed_groups))
+      allocate(this % prompt_nu_fission(energy_groups))
+      allocate(this % fission(energy_groups))
+      allocate(this % kappa_fission(energy_groups))
+      allocate(this % decay_rate(delayed_groups))
+      allocate(this % velocity(energy_groups))
+      allocate(this % chi_delayed(energy_groups, energy_groups))
+      allocate(this % chi_prompt(energy_groups, energy_groups))
+
       if (this % fissionable) then
+
+        ! There are three options for user input:
+        ! 1) chi (v) and nu_fission (v) provided
+        !   a) If beta present, prompt_nu_fission = (1 - beta) * nu_fission
+        !      and delayed_nu_fission_dg = beta_dg * nu_fission
+        !   b) Else, prompt_nu_fission = nu_fission and delayed_nu_fission = 0
+        ! 2) nu_fission (m) provided
+        !   a) If beta present, prompt_nu_fission = (1 - beta) * nu_fission
+        !      and delayed_nu_fission_dg = beta_dg * nu_fission
+        !   b) Else, prompt_nu_fission = nu_fission and delayed_nu_fission = 0
+        ! 3) chi_prompt (v), chi_delayed (v), prompt_nu_fission (v)
+        !    and delayed_nu_fission (v) provided
+        !
+        ! Based on which option the user has chosen, the chi_prompt,
+        ! chi_delayed, prompt_nu_fission, and delayed_nu_fission xs
+        ! will be set accordingly.
+
+        ! ----------------------------------------------------------------------
+        ! 1) chi (v) and nu_fission (v) provided
+        ! ----------------------------------------------------------------------
         if (check_for_node(node_xsdata, "chi")) then
-          ! Chi was provided, that means they are giving chi and nu-fission
-          ! vectors
-          ! Get chi
-          allocate(temp_arr(groups))
+
+          ! Allocate temporary array for beta
+          allocate(temp_beta(delayed_groups))
+
+          ! Set beta
+          if (check_for_node(node_xsdata, "beta")) then
+            call get_node_array(node_xsdata, "beta", temp_beta)
+          else
+            temp_beta = ZERO
+          end if
+
+          ! Set chi_prompt to chi
+          allocate(temp_arr(energy_groups))
           call get_node_array(node_xsdata, "chi", temp_arr)
-          do gin = 1, groups
-            do gout = 1, groups
-              this % chi(gout, gin) = temp_arr(gout)
+
+          do gin = 1, energy_groups
+            do gout = 1, energy_groups
+              this % chi_prompt(gout, gin) = temp_arr(gout)
             end do
-            ! Normalize chi so its CDF goes to 1
-            this % chi(:, gin) = this % chi(:, gin) / sum(this % chi(:, gin))
+
+            ! Normalize chi_prompt so its CDF goes to 1
+            this % chi_prompt(:, gin) = this % chi_prompt(:, gin) / &
+                 sum(this % chi_prompt(:, gin))
           end do
+
+          ! Set chi_delayed to chi_prompt
+          this % chi_delayed = this % chi_prompt
+
+          ! Deallocate temporary chi array
           deallocate(temp_arr)
 
-          ! Get nu_fission (as a vector)
+          ! Set prompt_nu_fission and delayed_nu_fission using
+          ! nu_fission (v) and beta
           if (check_for_node(node_xsdata, "nu_fission")) then
-            call get_node_array(node_xsdata, "nu_fission", this % nu_fission)
+
+            ! Get nu_fission
+            call get_node_array(node_xsdata, "nu_fission", &
+                 this % prompt_nu_fission)
+
+            ! ------------------------------------------------------------------
+            ! a) If beta present, prompt_nu_fission = (1 - beta) * nu_fission
+            !    and delayed_nu_fission_dg = beta_dg * nu_fission
+            ! b) Else, prompt_nu_fission = nu_fission and delayed_nu_fission = 0
+            ! ------------------------------------------------------------------
+            do gin = 1, energy_groups
+              do dg = 1, delayed_groups
+
+                ! Set delayed_nu_fission using delayed neutron fraction
+                this % delayed_nu_fission(gin, dg) = temp_beta(dg) * &
+                     this % prompt_nu_fission(gin)
+              end do
+
+              ! Correct prompt_nu_fission using delayed neutron fraction
+              this % prompt_nu_fission(gin) = (1 - sum(temp_beta)) * &
+                   this % prompt_nu_fission(gin)
+            end do
+
           else
-            call fatal_error("If fissionable, must provide nu_fission!")
+            call fatal_error("If chi provided, nu_fission must be provided")
           end if
 
-        else
-          ! chi isnt provided but is within nu_fission, existing as a matrix
-          ! So, get nu_fission (as a matrix)
-          if (check_for_node(node_xsdata, "nu_fission")) then
-            allocate(temp_arr(groups*groups))
-            call get_node_array(node_xsdata, "nu_fission", temp_arr)
-            allocate(temp_2d(groups, groups))
-            temp_2d = reshape(temp_arr, (/groups, groups/))
-            deallocate(temp_arr)
+          ! Deallocate temporary beta array
+          deallocate(temp_beta)
+
+          ! --------------------------------------------------------------------
+          ! 2) nu_fission (m) provided
+          ! --------------------------------------------------------------------
+        else if (check_for_node(node_xsdata, "nu_fission")) then
+
+          ! Allocate temporary array for beta
+          allocate(temp_beta(delayed_groups))
+
+          ! Set beta
+          if (check_for_node(node_xsdata, "beta")) then
+            call get_node_array(node_xsdata, "beta", temp_beta)
           else
-            call fatal_error("If fissionable, must provide nu_fission!")
+            temp_beta = ZERO
           end if
+
+          ! chi is embedded in nu_fission -> extract chi
+          allocate(temp_arr(energy_groups * energy_groups))
+          call get_node_array(node_xsdata, "nu_fission", temp_arr)
+          allocate(temp_2d(energy_groups, energy_groups))
+          temp_2d = reshape(temp_arr, (/energy_groups, energy_groups/))
+
+          ! Deallocate temporary 1D array for nu_fission matrix
+          deallocate(temp_arr)
 
           ! Set the vector nu-fission from the matrix nu-fission
-          do gin = 1, groups
-            this % nu_fission(gin) = sum(temp_2d(:, gin))
+          do gin = 1, energy_groups
+            this % prompt_nu_fission(gin) = sum(temp_2d(:, gin))
           end do
+
+          ! --------------------------------------------------------------------
+          ! a) If beta present, prompt_nu_fission = (1 - beta) * nu_fission
+          !    and delayed_nu_fission_dg = beta_dg * nu_fission
+          ! b) Else, prompt_nu_fission = nu_fission and delayed_nu_fission = 0
+          ! --------------------------------------------------------------------
+          do gin = 1, energy_groups
+            do dg = 1, delayed_groups
+
+              ! Set delayed_nu_fission using delayed neutron fraction
+              this % delayed_nu_fission(gin, dg) = temp_beta(dg) * &
+                   this % prompt_nu_fission(gin)
+            end do
+
+            ! Correct prompt_nu_fission using delayed neutron fraction
+            this % prompt_nu_fission(gin) = (1 - sum(temp_beta)) * &
+                 this % prompt_nu_fission(gin)
+          end do
+
+          ! Deallocate temporary beta array
+          deallocate(temp_beta)
 
           ! Now pull out information needed for chi
-          this % chi(:, :) = temp_2d
-          ! Normalize chi so its CDF goes to 1
-          do gin = 1, groups
-            this % chi(:, gin) = this % chi(:, gin) / sum(this % chi(:, gin))
-          end do
+          this % chi_prompt(:, :) = temp_2d
+
+          ! Deallocate temporary 2D array for nu_fission matrix
           deallocate(temp_2d)
-        end if
-        ! If we have a need* for the fission and kappa-fission x/s, get them
-        ! (*Need is defined as will be using it to tally)
-        if (get_fiss) then
-          allocate(this % fission(groups))
-          if (check_for_node(node_xsdata, "fission")) then
-            call get_node_array(node_xsdata, "fission", this % fission)
+
+          ! Normalize chi so its CDF goes to 1
+          do gin = 1, energy_groups
+            this % chi_prompt(:, gin) = this % chi_prompt(:, gin) / &
+                 sum(this % chi_prompt(:, gin))
+          end do
+
+          ! Set chi_delayed to chi_prompt
+          this % chi_delayed = this % chi_prompt
+
+          ! --------------------------------------------------------------------
+          ! 3) chi_prompt (v), chi_delayed (v), prompt_nu_fission (v)
+          !    and delayed_nu_fission (v) provided
+          ! --------------------------------------------------------------------
+        else
+
+          ! Set chi_prompt
+          if (check_for_node(node_xsdata, "chi_prompt")) then
+
+            ! Allocate temporary array for chi_prompt
+            allocate(temp_arr(energy_groups))
+
+            ! Get array with chi_prompt
+            call get_node_array(node_xsdata, "chi_prompt", temp_arr)
+
+            do gin = 1, energy_groups
+              do gout = 1, energy_groups
+                this % chi_prompt(gout, gin) = temp_arr(gout)
+              end do
+
+              ! Normalize chi so its CDF goes to 1
+              this % chi_prompt(:, gin) = this % chi_prompt(:, gin) / &
+                   sum(this % chi_prompt(:, gin))
+            end do
+
+            ! Deallocate temporary array for chi_prompt
+            deallocate(temp_arr)
+
           else
-            call fatal_error("Fission data missing, required due to fission&
-                             & tallies in tallies.xml file!")
+            call fatal_error("If chi and nu_fission not provided, chi_prompt &
+                 &must be provided")
+          end if
+
+          ! Set prompt_nu_fission
+          if (check_for_node(node_xsdata, "prompt_nu_fission")) then
+            call get_node_array(node_xsdata, "prompt_nu_fission", this % prompt_nu_fission)
+          else
+            call fatal_error("If chi and nu_fission not provided, &
+                 &prompt_nu_fission must be provided")
+          end if
+
+          ! Set chi_delayed
+          if (check_for_node(node_xsdata, "chi_delayed")) then
+
+            ! Allocate temporary array for chi_delayed
+            allocate(temp_arr(energy_groups))
+
+            ! Get array with chi_delayed
+            call get_node_array(node_xsdata, "chi_delayed", temp_arr)
+
+            do gin = 1, energy_groups
+              do gout = 1, energy_groups
+                this % chi_delayed(gout, gin) = temp_arr(gout)
+              end do
+
+              ! Normalize chi so its CDF goes to 1
+              this % chi_delayed(:, gin) = this % chi_delayed(:, gin) / &
+                   sum(this % chi_delayed(:, gin))
+            end do
+
+            ! Deallocate temporary array for chi_delayed
+            deallocate(temp_arr)
+
+          else
+            call fatal_error("If chi and nu_fision not provided, chi_delayed &
+                 &must be provided")
+          end if
+
+          ! Set delayed_nu_fission
+          if (check_for_node(node_xsdata, "delayed_nu_fission")) then
+
+            ! Allocate temporary array for delayed_nu_fission
+            allocate(temp_arr(energy_groups * delayed_groups))
+
+            ! Get array with delayed_nu_fission
+            call get_node_array(node_xsdata, "delayed_nu_fission", temp_arr)
+
+            this % delayed_nu_fission(:, :) = &
+                 reshape(temp_arr, (/energy_groups, delayed_groups/))
+
+            ! Deallocate temporary array for delayed_nu_fission
+            deallocate(temp_arr)
+
+          else
+            call fatal_error("If chi and nu_fission not provided, &
+                 &delayed_nu_fission must be provided")
           end if
         end if
-        if (get_kfiss) then
-          allocate(this % k_fission(groups))
-          if (check_for_node(node_xsdata, "kappa_fission")) then
-            call get_node_array(node_xsdata, "kappa_fission", this % k_fission)
-          else
-            call fatal_error("kappa_fission data missing, required due to &
-                             &kappa-fission tallies in tallies.xml file!")
-          end if
+
+        ! chi_prompt, chi_delayed, prompt_nu_fission, and delayed_nu_fission
+        ! have been set; Now we will check for the rest of the XS that are
+        ! unique to fissionable isotopes
+
+        ! Get fission xs
+        if (check_for_node(node_xsdata, "fission")) then
+          call get_node_array(node_xsdata, "fission", this % fission)
+        else
+          this % fission = ZERO
+        end if
+
+        ! Get kappa_fission xs
+        if (check_for_node(node_xsdata, "kappa_fission")) then
+          call get_node_array(node_xsdata, "kappa_fission", this % kappa_fission)
+        else
+          this % kappa_fission = ZERO
+        end if
+
+        ! Get decay rate xs
+        if (check_for_node(node_xsdata, "decay_rate")) then
+          call get_node_array(node_xsdata, "decay_rate", this % decay_rate)
+        else
+          this % decay_rate = ZERO
         end if
       else
-        this % nu_fission = ZERO
-        this % chi = ZERO
+        this % delayed_nu_fission = ZERO
+        this % prompt_nu_fission  = ZERO
+        this % fission            = ZERO
+        this % kappa_fission      = ZERO
+        this % chi_delayed        = ZERO
+        this % chi_prompt         = ZERO
+        this % decay_rate         = ZERO
       end if
 
-      allocate(this % absorption(groups))
+      ! All the XS unique to fissionable isotopes have been set; Now set all
+      ! the generation XS
+
+      ! Get absorption xs
       if (check_for_node(node_xsdata, "absorption")) then
         call get_node_array(node_xsdata, "absorption", this % absorption)
       else
         call fatal_error("Must provide absorption!")
       end if
 
+      ! Get velocity
+      if (check_for_node(node_xsdata, "velocity")) then
+        call get_node_array(node_xsdata, "velocity", this % velocity)
+      else
+        this % velocity = ZERO
+      end if
+
+      ! Allocate temporary 2D array for multiplicity matrix
+      allocate(temp_mult(energy_groups, energy_groups))
+
       ! Get multiplication data if present
-      allocate(temp_mult(groups, groups))
       if (check_for_node(node_xsdata, "multiplicity")) then
+
         arr_len = get_arraysize_double(node_xsdata, "multiplicity")
-        if (arr_len == groups * groups) then
+
+        if (arr_len == energy_groups * energy_groups) then
+
+          ! Allocate temporary 1D array for multiplicity matrix
           allocate(temp_arr(arr_len))
+
+          ! Get multiplcity matrix and convert to 2D array
           call get_node_array(node_xsdata, "multiplicity", temp_arr)
-          temp_mult(:, :) = reshape(temp_arr, (/groups, groups/))
+          temp_mult(:, :) = reshape(temp_arr, (/energy_groups, energy_groups/))
+
+          ! Deallocate temporary 1D array for multiplicity matrix
           deallocate(temp_arr)
+
         else
-          call fatal_error("Multiplicity length not same as number of groups&
-                           & squared!")
+          call fatal_error("Multiplicity length be the same as number of &
+               &groups squared!")
         end if
+
       else
         temp_mult(:, :) = ONE
       end if
@@ -384,31 +642,40 @@ module mgxs_header
       ! Set the default (Convert to tabular format w/ 33 points)
       enable_leg_mu = .true.
       legendre_mu_points = 33
+
       ! Get the user-provided values
       if (check_for_node(node_xsdata, "tabular_legendre")) then
+
         call get_node_ptr(node_xsdata, "tabular_legendre", node_legendre_mu)
+
         if (check_for_node(node_legendre_mu, "enable")) then
+
           call get_node_value(node_legendre_mu, "enable", temp_str)
           temp_str = trim(to_lower(temp_str))
+
           if (temp_str == 'true' .or. temp_str == '1') then
             enable_leg_mu = .true.
           elseif (temp_str == 'false' .or. temp_str == '0') then
             enable_leg_mu = .false.
           else
             call fatal_error("Unrecognized tabular_legendre/enable: " &
-                             // temp_str)
+                 // temp_str)
           end if
         end if
+
         ! Ok, so if we need to convert to a tabular form, get the user provided
         ! number of points
         if (enable_leg_mu) then
           if (check_for_node(node_legendre_mu, "num_points")) then
+
             call get_node_value(node_legendre_mu, "num_points", &
                  legendre_mu_points)
+
             if (legendre_mu_points <= 0) &
                  call fatal_error("num_points element must be positive&
                                   & and non-zero!")
           else
+
             ! Set the default number of points (0.0625 spacing)
             legendre_mu_points = 33
           end if
@@ -437,11 +704,13 @@ module mgxs_header
       ! Gout x Gin x Order.  We will get it in that format in input_scatt,
       ! but then need to convert it to a more useful ordering for processing
       ! (Order x Gout x Gin).
-      allocate(input_scatt(groups, groups, order_dim))
+      allocate(input_scatt(energy_groups, energy_groups, order_dim))
+
       if (check_for_node(node_xsdata, "scatter")) then
-        allocate(temp_arr(groups * groups * order_dim))
+
+        allocate(temp_arr(energy_groups * energy_groups * order_dim))
         call get_node_array(node_xsdata, "scatter", temp_arr)
-        input_scatt = reshape(temp_arr, (/groups, groups, order_dim/))
+        input_scatt = reshape(temp_arr, (/energy_groups, energy_groups, order_dim/))
         deallocate(temp_arr)
 
         ! Compare the number of orders given with the maximum order of the
@@ -450,7 +719,8 @@ module mgxs_header
           order = min(order_dim - 1, max_order)
           order_dim = order + 1
         end if
-        allocate(temp_scatt(groups, groups, order_dim))
+
+        allocate(temp_scatt(energy_groups, energy_groups, order_dim))
         temp_scatt(:, :, :) = input_scatt(:, :, 1:order_dim)
 
         ! Take input format (groups, groups, order) and convert to
@@ -460,15 +730,17 @@ module mgxs_header
         ! these legendres be converted to tabular form (note this is also
         ! the default behavior), convert that now.
         if (this % scatt_type == ANGLE_LEGENDRE .and. enable_leg_mu) then
+
           ! Convert input parameters to what we need for the rest.
           this % scatt_type = ANGLE_TABULAR
           order_dim = legendre_mu_points
           order = order_dim
           dmu = TWO / real(order - 1, 8)
 
-          allocate(scatt_coeffs(order_dim, groups, groups))
-          do gin = 1, groups
-            do gout = 1, groups
+          allocate(scatt_coeffs(order_dim, energy_groups, energy_groups))
+
+          do gin = 1, energy_groups
+            do gout = 1, energy_groups
               norm = ZERO
               do imu = 1, order_dim
                 if (imu == 1) then
@@ -478,11 +750,14 @@ module mgxs_header
                 else
                   mu = -ONE + real(imu - 1, 8) * dmu
                 end if
+
                 scatt_coeffs(imu, gout, gin) = &
                      evaluate_legendre(temp_scatt(gout, gin, :),mu)
+
                 ! Ensure positivity of distribution
                 if (scatt_coeffs(imu, gout, gin) < ZERO) &
                      scatt_coeffs(imu, gout, gin) = ZERO
+
                 ! And accrue the integral
                 if (imu > 1) then
                   norm = norm + HALF * dmu * &
@@ -490,6 +765,7 @@ module mgxs_header
                         scatt_coeffs(imu, gout, gin))
                 end if
               end do
+
               ! Now that we have the integral, lets ensure that the distribution
               ! is normalized such that it preserves the original scattering xs
               if (norm > ZERO) then
@@ -499,11 +775,13 @@ module mgxs_header
             end do
           end do
         else
+
           ! Sticking with current representation, carry forward but change
           ! the array ordering
-          allocate(scatt_coeffs(order_dim, groups, groups))
-          do gin = 1, groups
-            do gout = 1, groups
+          allocate(scatt_coeffs(order_dim, energy_groups, energy_groups))
+
+          do gin = 1, energy_groups
+            do gout = 1, energy_groups
               do l = 1, order_dim
                 scatt_coeffs(l, gout, gin) = temp_scatt(gout, gin, l)
               end do
@@ -527,15 +805,14 @@ module mgxs_header
       ! Initialize the ScattData Object
       call this % scatter % init(temp_mult, scatt_coeffs)
 
-      ! Check sigA to ensure it is not 0 since it is
+      ! Check absorption xs to ensure it is not 0 since it is
       ! often divided by in the tally routines
       ! (This may happen with Helium data)
-      do gin = 1, groups
+      do gin = 1, energy_groups
         if (this % absorption(gin) == ZERO) this % absorption(gin) = 1E-10_8
       end do
 
-      ! Get, or infer, total xs data.
-      allocate(this % total(groups))
+      ! Get or infer total xs data.
       if (check_for_node(node_xsdata, "total")) then
         call get_node_array(node_xsdata, "total", this % total)
       else
@@ -545,34 +822,34 @@ module mgxs_header
       ! Deallocate temporaries for the next material
       deallocate(input_scatt, scatt_coeffs, temp_mult)
 
-      ! Finally, check sigT to ensure it is not 0 since it is
+      ! Finally, check total xs to ensure it is not 0 since it is
       ! often divided by in the tally routines
-      do gin = 1, groups
+      do gin = 1, energy_groups
         if (this % total(gin) == ZERO) this % total(gin) = 1E-10_8
       end do
 
-
     end subroutine mgxsiso_init_file
 
-    subroutine mgxsang_init_file(this, node_xsdata, groups, get_kfiss, get_fiss, &
-                                 max_order)
-      class(MgxsAngle), intent(inout) :: this        ! Working Object
-      type(Node), pointer, intent(in) :: node_xsdata ! Data from MGXS xml
-      integer, intent(in)             :: groups      ! Number of Energy groups
-      logical, intent(in)             :: get_kfiss   ! Need Kappa-Fission?
-      logical, intent(in)             :: get_fiss    ! Should we get fiss data?
-      integer, intent(in)             :: max_order   ! Maximum requested order
+    subroutine mgxsang_init_file(this, node_xsdata, energy_groups, &
+         delayed_groups, max_order)
+
+      class(MgxsAngle), intent(inout) :: this           ! Working Object
+      type(Node), pointer, intent(in) :: node_xsdata    ! Data from MGXS xml
+      integer, intent(in)             :: energy_groups  ! Energy groups
+      integer, intent(in)             :: delayed_groups ! Delayed groups
+      integer, intent(in)             :: max_order      ! Max requested order
 
       type(Node), pointer     :: node_legendre_mu
       character(MAX_LINE_LEN) :: temp_str
       logical                 :: enable_leg_mu
       real(8), allocatable    :: temp_arr(:), temp_4d(:, :, :, :)
+      real(8), allocatable    :: temp_beta(:), temp_beta_3d(:, :, :)
       real(8), allocatable    :: temp_mult(:, :, :, :)
       real(8), allocatable    :: scatt_coeffs(:, :, :, :, :)
       real(8), allocatable    :: input_scatt(:, :, :, :, :)
       real(8), allocatable    :: temp_scatt(:, :, :, :, :)
       real(8)                 :: dmu, mu, norm, dangle
-      integer                 :: order, order_dim, gin, gout, l, arr_len
+      integer                 :: order, order_dim, gin, gout, l, arr_len, dg
       integer                 :: legendre_mu_points, imu, ipol, iazi
 
       ! Call generic data gathering routine (will populate the metadata)
@@ -593,172 +870,538 @@ module mgxs_header
       ! Load angle data, if present (else equally spaced)
       allocate(this % polar(this % n_pol))
       allocate(this % azimuthal(this % n_azi))
+
       if (check_for_node(node_xsdata, "polar")) then
+
         call fatal_error("User-Specified polar angle bins not yet supported!")
+
         ! When this feature is supported, this line will be activated
         call get_node_array(node_xsdata, "polar", this % polar)
       else
+
         dangle = PI / real(this % n_pol, 8)
+
         do ipol = 1, this % n_pol
           this % polar(ipol) = (real(ipol, 8) - HALF) * dangle
         end do
       end if
+
       if (check_for_node(node_xsdata, "azimuthal")) then
+
         call fatal_error("User-Specified azimuthal angle bins not yet supported!")
+
         ! When this feature is supported, this line will be activated
         call get_node_array(node_xsdata, "azimuthal", this % azimuthal)
+
       else
+
         dangle = TWO * PI / real(this % n_azi, 8)
+
         do iazi = 1, this % n_azi
           this % azimuthal(iazi) = -PI + (real(iazi, 8) - HALF) * dangle
         end do
       end if
 
       ! Load the more specific data
-      allocate(this % nu_fission(groups, this % n_azi, this % n_pol))
-      allocate(this % chi(groups, groups, this % n_azi, this % n_pol))
+      allocate(this % prompt_nu_fission(energy_groups, this % n_azi, &
+           this % n_pol))
+      allocate(this % delayed_nu_fission(energy_groups, &
+           this % n_azi, this % n_pol, delayed_groups))
+      allocate(this % chi_prompt(energy_groups, energy_groups, this % n_azi, &
+           this % n_pol))
+      allocate(this % chi_delayed(energy_groups, energy_groups, this % n_azi, &
+           this % n_pol))
+      allocate(this % total(energy_groups, this % n_azi, this % n_pol))
+      allocate(this % absorption(energy_groups, this % n_azi, this % n_pol))
+      allocate(this % fission(energy_groups, this % n_azi, this % n_pol))
+      allocate(this % kappa_fission(energy_groups, this % n_azi, this % n_pol))
+      allocate(this % decay_rate(this % n_azi, this % n_pol, delayed_groups))
+      allocate(this % velocity(energy_groups, this % n_azi, this % n_pol))
+
       if (this % fissionable) then
+
+        ! There are three options for user input:
+        ! 1) chi (v) and nu_fission (v) provided
+        !   a) If beta present, prompt_nu_fission = (1 - beta) * nu_fission
+        !      and delayed_nu_fission_dg = beta_dg * nu_fission
+        !   b) Else, prompt_nu_fission = nu_fission and delayed_nu_fission = 0
+        ! 2) nu_fission (m) provided
+        !   a) If beta present, prompt_nu_fission = (1 - beta) * nu_fission
+        !      and delayed_nu_fission_dg = beta_dg * nu_fission
+        !   b) Else, prompt_nu_fission = nu_fission and delayed_nu_fission = 0
+        ! 3) chi_prompt (v), chi_delayed (v), prompt_nu_fission (v)
+        !    and delayed_nu_fission (v) provided
+        !
+        ! Based on which option the user has chosen, the chi_prompt,
+        ! chi_delayed, prompt_nu_fission, and delayed_nu_fission xs
+        ! will be set accordingly.
+
+        ! ----------------------------------------------------------------------
+        ! 1) chi (v) and nu_fission (v) provided
+        ! ----------------------------------------------------------------------
         if (check_for_node(node_xsdata, "chi")) then
-          ! Chi was provided, that means they are giving chi and nu-fission
-          ! vectors
-          ! Get chi
-          allocate(temp_arr(1 * groups * this % n_azi * this % n_pol))
+
+          ! Allocate temporary arrays for beta
+          allocate(temp_beta(this % n_azi * this % n_pol * delayed_groups))
+          allocate(temp_beta_3d(this % n_azi, this % n_pol, delayed_groups))
+
+          ! Set beta
+          if (check_for_node(node_xsdata, "beta")) then
+            call get_node_array(node_xsdata, "beta", temp_beta)
+          else
+            temp_beta = ZERO
+          end if
+
+          ! Reshape beta array
+          temp_beta_3d(:, :, :) = reshape(temp_beta, &
+               (/this % n_azi, this % n_pol, delayed_groups/))
+
+          ! Set chi_prompt to chi
+          allocate(temp_arr(1 * energy_groups * this % n_azi * this % n_pol))
           call get_node_array(node_xsdata, "chi", temp_arr)
+
           ! Initialize counter for temp_arr
           l = 0
           gin = 1
           do ipol = 1, this % n_pol
             do iazi = 1, this % n_azi
-              do gout = 1, groups
+              do gout = 1, energy_groups
                 l = l + 1
-                this % chi(gout, gin, iazi, ipol) = temp_arr(l)
+                this % chi_prompt(gout, gin, iazi, ipol) = temp_arr(l)
               end do
+
               ! Normalize chi so its CDF goes to 1
-              this % chi(:, gin, iazi, ipol) = &
-                   this % chi(:, gin, iazi, ipol) / &
-                   sum(this % chi(:, gin, iazi, ipol))
+              this % chi_prompt(:, gin, iazi, ipol) = &
+                   this % chi_prompt(:, gin, iazi, ipol) / &
+                   sum(this % chi_prompt(:, gin, iazi, ipol))
             end do
           end do
 
           ! Now set all the other gin values
           do ipol = 1, this % n_pol
             do iazi = 1, this % n_azi
-              do gin = 2, groups
-                this % chi(:, gin, iazi, ipol) = &
-                     this % chi(:, 1, iazi, ipol)
+              do gin = 2, energy_groups
+                this % chi_prompt(:, gin, iazi, ipol) = &
+                     this % chi_prompt(:, 1, iazi, ipol)
               end do
             end do
           end do
+
+          ! Set chi_delayed to chi_prompt
+          this % chi_delayed = this % chi_prompt
+
+          ! Deallocate temporary chi array
           deallocate(temp_arr)
 
           ! Get nu_fission (as a vector)
           if (check_for_node(node_xsdata, "nu_fission")) then
-            allocate(temp_arr(groups * this % n_azi * this % n_pol))
-            call get_node_array(node_xsdata, "nu_fission", temp_arr)
-            this % nu_fission(:, :, :) = reshape(temp_arr, (/groups, &
-                 this % n_azi, this % n_pol/))
+
+            ! Allocate temporary array for nu_fission
+            allocate(temp_arr(energy_groups * this % n_azi * this % n_pol))
+
+            ! Get nu_fission
+            call get_node_array(node_xsdata, "prompt_nu_fission", temp_arr)
+            this % prompt_nu_fission(:, :, :) = reshape(temp_arr, &
+                 (/energy_groups, this % n_azi, this % n_pol/))
+
+            ! Deallocate temporary array for nu_fission
             deallocate(temp_arr)
+
+            ! ------------------------------------------------------------------
+            ! a) If beta present, prompt_nu_fission = (1 - beta) * nu_fission
+            !    and delayed_nu_fission_dg = beta_dg * nu_fission
+            ! b) Else, prompt_nu_fission = nu_fission and delayed_nu_fission = 0
+            ! ------------------------------------------------------------------
+            do gin = 1, energy_groups
+              do ipol = 1, this % n_pol
+                do iazi = 1, this % n_azi
+                  do dg = 1, delayed_groups
+
+                    ! Set delayed_nu_fission using delayed neutron fraction
+                    this % delayed_nu_fission(gin, iazi, ipol, dg) = &
+                         temp_beta_3d(iazi, ipol, dg) * &
+                         this % prompt_nu_fission(gin, iazi, ipol)
+                  end do
+
+                  ! Correct prompt_nu_fission using delayed neutron fraction
+                  this % prompt_nu_fission(gin, iazi, ipol) = &
+                       (1 - sum(temp_beta_3d(iazi, ipol, :))) * &
+                       this % prompt_nu_fission(gin, iazi, ipol)
+                end do
+              end do
+            end do
           else
-            call fatal_error("If fissionable, must provide nu_fission!")
+            call fatal_error("If chi provided, nu_fission must be provided")
           end if
 
-        else
-          ! chi isnt provided but is within nu_fission, existing as a matrix
-          ! So, get nu_fission (as a matrix)
-          if (check_for_node(node_xsdata, "nu_fission")) then
-            allocate(temp_arr(groups * groups * this % n_azi * this % n_pol))
-            call get_node_array(node_xsdata, "nu_fission", temp_arr)
-            allocate(temp_4d(groups, groups, this % n_azi,this % n_pol))
-            temp_4d(:, :, :, :) = reshape(temp_arr, (/groups, groups, &
-                 this % n_azi, this % n_pol/))
-            deallocate(temp_arr)
+          ! Deallocate temporary beta arrays
+          deallocate(temp_beta)
+          deallocate(temp_beta_3d)
+
+          ! --------------------------------------------------------------------
+          ! 2) nu_fission (m) provided
+          ! --------------------------------------------------------------------
+        else if (check_for_node(node_xsdata, "nu_fission")) then
+
+          ! Allocate temporary arrays for beta
+          allocate(temp_beta(this % n_azi * this % n_pol * delayed_groups))
+          allocate(temp_beta_3d(this % n_azi, this % n_pol, delayed_groups))
+
+          ! Set beta
+          if (check_for_node(node_xsdata, "beta")) then
+            call get_node_array(node_xsdata, "beta", temp_beta)
           else
-            call fatal_error("If fissionable, must provide nu_fission!")
+            temp_beta = ZERO
           end if
+
+          ! Reshape beta array
+          temp_beta_3d(:, :, :) = reshape(temp_beta, &
+               (/this % n_azi, this % n_pol, delayed_groups/))
+
+          ! Allocate temporary arrays for nu_fission matrix
+          allocate(temp_arr(energy_groups * energy_groups * this % n_azi * &
+               this % n_pol))
+          allocate(temp_4d(energy_groups, energy_groups, this % n_azi, &
+               this % n_pol))
+
+          ! chi is embedded in nu_fission -> extract chi
+          call get_node_array(node_xsdata, "nu_fission", temp_arr)
+          temp_4d(:, :, :, :) = reshape(temp_arr, (/energy_groups, &
+               energy_groups, this % n_azi, this % n_pol/))
+
+          ! Deallocate temporary 1D array for nu_fission matrix
+          deallocate(temp_arr)
 
           ! Set the vector nu-fission from the matrix nu-fission
           do ipol = 1, this % n_pol
             do iazi = 1, this % n_azi
-              do gin = 1, groups
-                this % nu_fission(gin, iazi, ipol) = &
+              do gin = 1, energy_groups
+                this % prompt_nu_fission(gin, iazi, ipol) = &
                      sum(temp_4d(:, gin, iazi, ipol))
               end do
             end do
           end do
 
           ! Now pull out information needed for chi
-          this % chi = temp_4d
+          this % chi_prompt = temp_4d
+
           ! Normalize chi so its CDF goes to 1
           do ipol = 1, this % n_pol
             do iazi = 1, this % n_azi
-              do gin = 1, groups
-                this % chi(:, gin, iazi, ipol) = &
-                     this % chi(:, gin, iazi, ipol) / &
-                     sum(this % chi(:, gin, iazi, ipol))
+              do gin = 1, energy_groups
+                this % chi_prompt(:, gin, iazi, ipol) = &
+                     this % chi_prompt(:, gin, iazi, ipol) / &
+                     sum(this % chi_prompt(:, gin, iazi, ipol))
               end do
             end do
           end do
+
+          ! Set chi_delayed to chi_prompt
+          this % chi_delayed = this % chi_prompt
+
+          ! Deallocate temporary chi array
           deallocate(temp_4d)
+
+          ! ------------------------------------------------------------------
+          ! a) If beta present, prompt_nu_fission = (1 - beta) * nu_fission
+          !    and delayed_nu_fission_dg = beta_dg * nu_fission
+          ! b) Else, prompt_nu_fission = nu_fission and delayed_nu_fission = 0
+          ! ------------------------------------------------------------------
+          do gin = 1, energy_groups
+            do ipol = 1, this % n_pol
+              do iazi = 1, this % n_azi
+                do dg = 1, delayed_groups
+
+                  ! Set delayed_nu_fission using delayed neutron fraction
+                  this % delayed_nu_fission(gin, iazi, ipol, dg) = &
+                       temp_beta_3d(iazi, ipol, dg) * &
+                       this % prompt_nu_fission(gin, iazi, ipol)
+                end do
+
+                ! Correct prompt_nu_fission using delayed neutron fraction
+                this % prompt_nu_fission(gin, iazi, ipol) = &
+                     (1 - sum(temp_beta_3d(iazi, ipol, :))) * &
+                     this % prompt_nu_fission(gin, iazi, ipol)
+              end do
+            end do
+          end do
+
+          ! Deallocate temporary beta arrays
+          deallocate(temp_beta)
+          deallocate(temp_beta_3d)
+
+          ! --------------------------------------------------------------------
+          ! 3) chi_prompt (v), chi_delayed (v), prompt_nu_fission (v)
+          !    and delayed_nu_fission (v) provided
+          ! --------------------------------------------------------------------
+        else
+
+          ! Set chi_prompt
+          if (check_for_node(node_xsdata, "chi_prompt")) then
+
+            ! Allocate temporary array for chi_prompt
+            allocate(temp_arr(1 * energy_groups * this % n_azi * this % n_pol))
+
+            ! Get array for chi_prompt
+            call get_node_array(node_xsdata, "chi_prompt", temp_arr)
+
+            ! Initialize counter for temp_arr
+            l = 0
+            gin = 1
+            do ipol = 1, this % n_pol
+              do iazi = 1, this % n_azi
+                do gout = 1, energy_groups
+                  l = l + 1
+                  this % chi_prompt(gout, gin, iazi, ipol) = temp_arr(l)
+                end do
+
+                ! Normalize chi so its CDF goes to 1
+                this % chi_prompt(:, gin, iazi, ipol) = &
+                     this % chi_prompt(:, gin, iazi, ipol) / &
+                     sum(this % chi_prompt(:, gin, iazi, ipol))
+              end do
+            end do
+
+            ! Now set all the other gin values
+            do ipol = 1, this % n_pol
+              do iazi = 1, this % n_azi
+                do gin = 2, energy_groups
+                  this % chi_prompt(:, gin, iazi, ipol) = &
+                       this % chi_prompt(:, 1, iazi, ipol)
+                end do
+              end do
+            end do
+
+            ! Dellocate temporary array for chi_prompt
+            deallocate(temp_arr)
+
+          else
+            call fatal_error("If chi and nu_fission not provided, chi_prompt &
+                 &must be provided")
+          end if
+
+          ! Set prompt_nu_fission
+          if (check_for_node(node_xsdata, "prompt_nu_fission")) then
+
+            ! Allocate temporaray array for prompt_nu_fission
+            allocate(temp_arr(energy_groups * this % n_azi * this % n_pol))
+
+            ! Get array for prompt_nu_fission
+            call get_node_array(node_xsdata, "prompt_nu_fission", temp_arr)
+            this % prompt_nu_fission(:, :, :) = reshape(temp_arr, &
+                 (/energy_groups, this % n_azi, this % n_pol/))
+
+            ! Deallocate temporary array for prompt_nu_fission
+            deallocate(temp_arr)
+
+          else
+            call fatal_error("If chi and nu_fision not provided, &
+                 &prompt_nu_fission must be provided")
+          end if
+
+          ! Set chi_delayed
+          if (check_for_node(node_xsdata, "chi_delayed")) then
+
+            ! Allocate temporary array for chi_delayed
+            allocate(temp_arr(1 * energy_groups * &
+                 this % n_azi * this % n_pol))
+
+            ! Get array with chi_delayed
+            call get_node_array(node_xsdata, "chi_delayed", temp_arr)
+
+            ! Initialize counter for temp_arr
+            l = 0
+            gin = 1
+            do ipol = 1, this % n_pol
+              do iazi = 1, this % n_azi
+                do gout = 1, energy_groups
+                  l = l + 1
+                  this % chi_delayed(gout, gin, iazi, ipol) = temp_arr(l)
+                end do
+
+                ! Normalize chi so its CDF goes to 1
+                this % chi_delayed(:, gin, iazi, ipol) = &
+                     this % chi_delayed(:, gin, iazi, ipol) / &
+                     sum(this % chi_delayed(:, gin, iazi, ipol))
+              end do
+            end do
+
+            ! Now set all the other gin values
+            do ipol = 1, this % n_pol
+              do iazi = 1, this % n_azi
+                do gin = 2, energy_groups
+                  this % chi_delayed(:, gin, iazi, ipol) = &
+                       this % chi_delayed(:, 1, iazi, ipol)
+                end do
+              end do
+            end do
+
+            ! Deallocate temporary array for chi_delayed
+            deallocate(temp_arr)
+
+          else
+            call fatal_error("If chi and nu_fission not provided, chi_delayed &
+                 &must be provided")
+          end if
+
+          ! Get delayed_nu_fission
+          if (check_for_node(node_xsdata, "delayed_nu_fission")) then
+
+            ! Allocate temporary array for delayed_nu_fission
+            allocate(temp_arr(energy_groups * delayed_groups * &
+                 this % n_azi * this % n_pol))
+
+            ! Get array with delayed_nu_fission
+            call get_node_array(node_xsdata, "delayed_nu_fission", temp_arr)
+            this % delayed_nu_fission(:, :, :, :) = reshape(temp_arr, &
+                 (/energy_groups, this % n_azi, this % n_pol, delayed_groups/))
+
+            ! Deallocate temporary array for delayed_nu_fission
+            deallocate(temp_arr)
+
+          else
+            call fatal_error("If chi and nu_fision not provided, &
+                 &delayed_nu_fission must be provided")
+          end if
         end if
 
-        ! If we have a need* for the fission and kappa-fission x/s, get them
-        ! (*Need is defined as will be using it to tally)
-        if (get_fiss) then
-          if (check_for_node(node_xsdata, "fission")) then
-            allocate(temp_arr(groups * this % n_azi * this % n_pol))
-            call get_node_array(node_xsdata, "fission", temp_arr)
-            allocate(this % fission(groups, this % n_azi, this % n_pol))
-            this % fission(:, :, :) = reshape(temp_arr, (/groups, this % n_azi, &
-                 this % n_pol/))
-            deallocate(temp_arr)
-          else
-            call fatal_error("Fission data missing, required due to fission&
-                             & tallies in tallies.xml file!")
-          end if
+        ! chi_prompt, chi_delayed, prompt_nu_fission, and delayed_nu_fission
+        ! have been set; Now we will check for the rest of the XS that are
+        ! unique to fissionable isotopes
+
+        ! Set fission xs
+        if (check_for_node(node_xsdata, "fission")) then
+
+          ! Allocate temporary array for fission
+          allocate(temp_arr(energy_groups * this % n_azi * this % n_pol))
+
+          ! Get fission array
+          call get_node_array(node_xsdata, "fission", temp_arr)
+          this % fission(:, :, :) = reshape(temp_arr, (/energy_groups, &
+               this % n_azi, this % n_pol/))
+
+          ! Deallocate temporary array for fission
+          deallocate(temp_arr)
+
+        else
+          this % fission = ZERO
         end if
-        if (get_kfiss) then
-          if (check_for_node(node_xsdata, "kappa_fission")) then
-            allocate(temp_arr(groups * this % n_azi * this % n_pol))
-            call get_node_array(node_xsdata, "kappa_fission", temp_arr)
-            allocate(this % k_fission(groups, this % n_azi, this % n_pol))
-            this % k_fission(:, :, :) = reshape(temp_arr, (/groups, &
-                 this % n_azi, this % n_pol/))
-            deallocate(temp_arr)
-          else
-            call fatal_error("kappa_fission data missing, required due to &
-                             &kappa-fission tallies in tallies.xml file!")
-          end if
+
+        ! Set kappa_fission xs
+        if (check_for_node(node_xsdata, "kappa_fission")) then
+
+          ! Allocate temporary array for kappa_fission
+          allocate(temp_arr(energy_groups * this % n_azi * this % n_pol))
+
+          ! Get kappa_fission array
+          call get_node_array(node_xsdata, "kappa_fission", temp_arr)
+          this % kappa_fission(:, :, :) = reshape(temp_arr, (/energy_groups, &
+               this % n_azi, this % n_pol/))
+
+          ! Deallocate temporary array for kappa_fission
+          deallocate(temp_arr)
+
+        else
+          this % kappa_fission = ZERO
         end if
+
+        ! Set decay rate
+        if (check_for_node(node_xsdata, "decay_rate")) then
+
+          ! Allocate temporary array for decay_rate
+          allocate(temp_arr(this % n_azi * this % n_pol * delayed_groups))
+
+          ! Get decay_rate array
+          call get_node_array(node_xsdata, "decay_rate", temp_arr)
+          this % decay_rate(:, :, :) = reshape(temp_arr, (/this % n_azi, &
+               this % n_pol, delayed_groups/))
+
+          ! Deallocate temporary array for decay_rate
+          deallocate(temp_arr)
+
+        else
+          this % decay_rate = ZERO
+        end if
+
       else
-        this % nu_fission(:, :, :) = ZERO
-        this % chi(:, :, :, :) = ZERO
+        this % delayed_nu_fission(:, :, :, :) = ZERO
+        this % prompt_nu_fission(:, :, :)     = ZERO
+        this % chi_delayed(:, :, :, :)        = ZERO
+        this % chi_prompt(:, :, :, :)         = ZERO
+        this % fission(:, :, :)               = ZERO
+        this % kappa_fission(:, :, :)         = ZERO
+        this % decay_rate(:, :, :)            = ZERO
       end if
 
+      ! All the XS unique to fissionable isotopes have been set; Now set all
+      ! the generation XS
+
+      ! Get absorption xs
       if (check_for_node(node_xsdata, "absorption")) then
-        allocate(temp_arr(groups * this % n_azi * this % n_pol))
+
+        ! Allocate temporary array for decay_rate
+        allocate(temp_arr(energy_groups * this % n_azi * this % n_pol))
+
+        ! Get absorption array
         call get_node_array(node_xsdata, "absorption", temp_arr)
-        allocate(this % absorption(groups, this % n_azi, this % n_pol))
-        this % absorption(:, :, :) = reshape(temp_arr, (/groups, this % n_azi, &
-             this % n_pol/))
+        this % absorption(:, :, :) = reshape(temp_arr, (/energy_groups, &
+             this % n_azi, this % n_pol/))
+
+        ! Deallocate temporary array for decay_rate
         deallocate(temp_arr)
+
       else
         call fatal_error("Must provide absorption!")
       end if
 
+      ! Get velocity
+      if (check_for_node(node_xsdata, "velocity")) then
+
+        ! Allocate temporary array for decay_rate
+        allocate(temp_arr(energy_groups * this % n_azi * this % n_pol))
+
+        ! Get velocity array
+        call get_node_array(node_xsdata, "velocity", temp_arr)
+        this % velocity(:, :, :) = reshape(temp_arr, (/energy_groups, &
+             this % n_azi, this % n_pol/))
+
+        ! Deallocate temporary array for decay_rate
+        deallocate(temp_arr)
+
+      else
+        this % velocity = ZERO
+      end if
+
       ! Get multiplication data if present
-      allocate(temp_mult(groups,groups, this % n_azi, this % n_pol))
       if (check_for_node(node_xsdata, "multiplicity")) then
+
+        ! Allocate temporary 4D array for multiplicity
+        allocate(temp_mult(energy_groups, energy_groups, this % n_azi, &
+             this % n_pol))
+
+        ! Get multiplicity data
         arr_len = get_arraysize_double(node_xsdata, "multiplicity")
-        if (arr_len == groups * groups * this % n_azi * this % n_pol) then
+        if (arr_len == energy_groups * energy_groups * this % n_azi * &
+             this % n_pol) then
+
+          ! Allocate temporary 1D array for multiplicity
           allocate(temp_arr(arr_len))
+
+          ! Get multiplicity
           call get_node_array(node_xsdata, "multiplicity", temp_arr)
-          temp_mult(:, :, :, :) = reshape(temp_arr, (/groups, groups, &
-               this % n_azi, this % n_pol/))
+          temp_mult(:, :, :, :) = reshape(temp_arr, (/energy_groups, &
+               energy_groups, this % n_azi, this % n_pol/))
+
+          ! Deallocate temporary 1D array for multiplicity
           deallocate(temp_arr)
         else
           call fatal_error("Multiplicity length not same as number of groups&
                            & squared!")
         end if
+
+        ! Deallocate temporary 4D array for multiplicity
+        deallocate(temp_mult)
+
       else
         temp_mult(:, :, :, :) = ONE
       end if
@@ -784,6 +1427,7 @@ module mgxs_header
                              // temp_str)
           end if
         end if
+
         ! Ok, so if we need to convert to a tabular form, get the user provided
         ! number of points
         if (enable_leg_mu) then
@@ -822,14 +1466,14 @@ module mgxs_header
       ! Gout x Gin x Order x Azi x Pol.  We will get it in that format in
       ! input_scatt, but then need to convert it to a more useful ordering
       ! for processing (Order x Gout x Gin x Azi x Pol).
-      allocate(input_scatt(groups, groups, order_dim, this % n_azi, &
-                           this % n_pol))
+      allocate(input_scatt(energy_groups, energy_groups, order_dim, &
+           this % n_azi, this % n_pol))
       if (check_for_node(node_xsdata, "scatter")) then
-        allocate(temp_arr(groups * groups * order_dim * this % n_azi * &
-                          this % n_pol))
+        allocate(temp_arr(energy_groups * energy_groups * order_dim * &
+             this % n_azi * this % n_pol))
         call get_node_array(node_xsdata, "scatter", temp_arr)
-        input_scatt(:, :, :, :, :) = reshape(temp_arr, (/groups, groups, &
-             order_dim, this % n_azi, this % n_pol/))
+        input_scatt(:, :, :, :, :) = reshape(temp_arr, (/energy_groups, &
+             energy_groups, order_dim, this % n_azi, this % n_pol/))
         deallocate(temp_arr)
 
         ! Compare the number of orders given with the maximum order of the
@@ -839,8 +1483,8 @@ module mgxs_header
           order_dim = order + 1
         end if
 
-        allocate(temp_scatt(groups, groups, order_dim, this % n_azi, &
-                            this % n_pol))
+        allocate(temp_scatt(energy_groups, energy_groups, order_dim, &
+             this % n_azi, this % n_pol))
         temp_scatt(:, :, :, :, :) = input_scatt(:, :, 1:order_dim, :, :)
 
         ! Take input format (groups, groups, order) and convert to
@@ -857,12 +1501,12 @@ module mgxs_header
           order = order_dim
           dmu = TWO / real(order - 1, 8)
 
-          allocate(scatt_coeffs(order_dim, groups, groups, this % n_azi, &
-                                this % n_pol))
+          allocate(scatt_coeffs(order_dim, energy_groups, energy_groups, &
+               this % n_azi, this % n_pol))
           do ipol = 1, this % n_pol
             do iazi = 1, this % n_azi
-              do gin = 1, groups
-                do gout = 1, groups
+              do gin = 1, energy_groups
+                do gout = 1, energy_groups
                   norm = ZERO
                   do imu = 1, order_dim
                     if (imu == 1) then
@@ -898,12 +1542,12 @@ module mgxs_header
         else
           ! Sticking with current representation, carry forward but change
           ! the array ordering
-          allocate(scatt_coeffs(order_dim, groups, groups, this % n_azi, &
-                                this % n_pol))
+          allocate(scatt_coeffs(order_dim, energy_groups, energy_groups, &
+               this % n_azi, this % n_pol))
           do ipol = 1, this % n_pol
             do iazi = 1, this % n_azi
-              do gin = 1, groups
-                do gout = 1, groups
+              do gin = 1, energy_groups
+                do gout = 1, energy_groups
                   do l = 1, order_dim
                     scatt_coeffs(l, gout, gin, iazi, ipol) = &
                          temp_scatt(gout, gin, l, iazi, ipol)
@@ -939,12 +1583,12 @@ module mgxs_header
       ! Deallocate temporaries for the next material
       deallocate(input_scatt, scatt_coeffs, temp_mult)
 
-      allocate(this % total(groups, this % n_azi, this % n_pol))
+      allocate(this % total(energy_groups, this % n_azi, this % n_pol))
       if (check_for_node(node_xsdata, "total")) then
-        allocate(temp_arr(groups * this % n_azi * this % n_pol))
+        allocate(temp_arr(energy_groups * this % n_azi * this % n_pol))
         call get_node_array(node_xsdata, "total", temp_arr)
-        this % total(:, :, :) = reshape(temp_arr, (/groups, this % n_azi, &
-             this % n_pol/))
+        this % total(:, :, :) = reshape(temp_arr, (/energy_groups, &
+             this % n_azi, this % n_pol/))
         deallocate(temp_arr)
       else
         do ipol = 1, this % n_pol
@@ -970,17 +1614,20 @@ module mgxs_header
 
       ! Basic nuclide information
       write(unit_,*) 'MGXS Entry: ' // trim(this % name)
+
       if (this % zaid > 0) then
         write(unit_,*) '  ZAID = ' // trim(to_str(this % zaid))
       else if (this % zaid < 0) then
         write(unit_,*) '  Material id = ' // trim(to_str(-this % zaid))
       end if
+
       if (this % awr > ZERO) then
         write(unit_,*) '  AWR = ' // trim(to_str(this % awr))
       end if
       if (this % kT > ZERO) then
         write(unit_,*) '  kT = ' // trim(to_str(this % kT))
       end if
+
       if (this % scatt_type == ANGLE_LEGENDRE) then
         temp_str = "Legendre"
         write(unit_,*) '  Scattering Type = ' // trim(temp_str)
@@ -1006,6 +1653,7 @@ module mgxs_header
         end select
         write(unit_,*) '    Num. Distribution Points = ' // trim(temp_str)
       end if
+
       write(unit_,*) '  Fissionable = ', this % fissionable
 
     end subroutine mgxs_print
@@ -1036,12 +1684,16 @@ module mgxs_header
              2 * size(this % scatter % energy(gin) % data) + &
              size(this % scatter % dist(gin) % data)
       end do
+
       size_scattmat = size_scattmat + size(this % scatter % scattxs)
       size_scattmat = size_scattmat * 8
 
       size_mgxs = size(this % total) + size(this % absorption) + &
-           size(this % nu_fission) + size(this % k_fission) + &
-           size(this % fission) + size(this % chi)
+           size(this % kappa_fission) + size(this % fission) + &
+           size(this % delayed_nu_fission) + size(this % prompt_nu_fission) + &
+           size(this % decay_rate) + size(this % velocity) + &
+           size(this % chi_delayed) + size(this % chi_prompt)
+
       size_mgxs = size_mgxs * 8
 
       ! Calculate total memory
@@ -1094,11 +1746,15 @@ module mgxs_header
                size(this % scatter(iazi, ipol) % obj % scattxs)
         end do
       end do
+
       size_scattmat = size_scattmat * 8
 
       size_mgxs = size(this % total) + size(this % absorption) + &
-           size(this % nu_fission) + size(this % k_fission) + &
-           size(this % fission) + size(this % chi)
+           size(this % kappa_fission) + size(this % fission) + &
+           size(this % delayed_nu_fission) + size(this % prompt_nu_fission) + &
+           size(this % decay_rate) + size(this % velocity) + &
+           size(this % chi_delayed) + size(this % chi_prompt)
+
       size_mgxs = size_mgxs * 8
 
       ! Calculate total memory
@@ -1119,41 +1775,96 @@ module mgxs_header
 ! MGXS*_GET_XS returns the requested data cross section data
 !===============================================================================
 
-    pure function mgxsiso_get_xs(this, xstype, gin, gout, uvw, mu) result(xs)
+    pure function mgxsiso_get_xs(this, xstype, gin, gout, uvw, mu, dg) result(xs)
       class(MgxsIso), intent(in)    :: this   ! The Mgxs to initialize
       character(*) , intent(in)     :: xstype ! Type of xs requested
-      integer, intent(in)           :: gin    ! Incoming Energy group
-      integer, optional, intent(in) :: gout   ! Outgoing Energy group
-      real(8), optional, intent(in) :: uvw(3) ! Requested Angle
+      integer, intent(in)           :: gin    ! Incoming energy group
+      integer, optional, intent(in) :: gout   ! Outgoing energy group
+      real(8), optional, intent(in) :: uvw(3) ! Requested angle
       real(8), optional, intent(in) :: mu     ! Change in angle
+      integer, optional, intent(in) :: dg     ! Delayed group
       real(8)                       :: xs     ! Requested x/s
 
       select case(xstype)
+
       case('total')
         xs = this % total(gin)
+
       case('absorption')
         xs = this % absorption(gin)
+
       case('fission')
-        if (allocated(this % fission)) then
-          xs = this % fission(gin)
-        else
-          xs = ZERO
-        end if
+        xs = this % fission(gin)
+
       case('kappa_fission')
-        if (allocated(this % k_fission)) then
-          xs = this % k_fission(gin)
+        xs = this % kappa_fission(gin)
+
+      case('velocity')
+        xs = this % velocity(gin)
+
+      case('decay_rate')
+        if (present(dg)) then
+          xs = this % decay_rate(dg)
+        else
+          xs = this % decay_rate(1)
+        end if
+
+      case('prompt_nu_fission')
+        xs = this % prompt_nu_fission(gin)
+
+      case('delayed_nu_fission')
+        if (present(dg)) then
+          xs = this % delayed_nu_fission(gin, dg)
+        else
+          xs = sum(this % delayed_nu_fission(gin, :))
+        end if
+
+      case('nu_fission')
+        xs = this % prompt_nu_fission(gin) + &
+             sum(this % delayed_nu_fission(gin, :))
+
+      case('nu')
+        if (this % fission(gin) > ZERO) then
+          xs = (sum(this % delayed_nu_fission(gin, :)) + &
+               this % prompt_nu_fission(gin)) / this % fission(gin)
         else
           xs = ZERO
         end if
-      case('nu_fission')
-        xs = this % nu_fission(gin)
-      case('chi')
+
+      case('nu_prompt')
+        if (this % fission(gin) > ZERO) then
+          xs = this % prompt_nu_fission(gin) / this % fission(gin)
+        else
+          xs = ZERO
+        end if
+
+      case('nu_delayed')
+        if (this % fission(gin) > ZERO) then
+          if (present(dg)) then
+            xs = this % delayed_nu_fission(gin, dg) / this % fission(gin)
+          else
+            xs = sum(this % delayed_nu_fission(gin, :)) / this % fission(gin)
+          end if
+        else
+          xs = ZERO
+        end if
+
+      case('chi_prompt')
         if (present(gout)) then
-          xs = this % chi(gout,gin)
+          xs = this % chi_prompt(gout,gin)
         else
           ! Not sure youd want a 1 or a 0, but here you go!
-          xs = sum(this % chi(:, gin))
+          xs = sum(this % chi_prompt(:, gin))
         end if
+
+      case('chi_delayed')
+        if (present(gout)) then
+          xs = this % chi_delayed(gout,gin)
+        else
+          ! Not sure youd want a 1 or a 0, but here you go!
+          xs = sum(this % chi_delayed(:, gin))
+        end if
+
       case('scatter')
         if (present(gout)) then
           if (gout < this % scatter % gmin(gin) .or. &
@@ -1166,6 +1877,7 @@ module mgxs_header
         else
           xs = this % scatter % scattxs(gin)
         end if
+
       case('scatter/mult')
         if (present(gout)) then
           if (gout < this % scatter % gmin(gin) .or. &
@@ -1181,6 +1893,7 @@ module mgxs_header
                (dot_product(this % scatter % mult(gin) % data, &
                 this % scatter % energy(gin) % data))
         end if
+
       case('scatter*f_mu/mult','scatter*f_mu')
         if (present(gout)) then
           if (gout < this % scatter % gmin(gin) .or. &
@@ -1201,51 +1914,114 @@ module mgxs_header
           ! user of this code wants the complete 1-outgoing group distribution
           ! which Im not sure what they would do with that.
         end if
+
       case default
         xs = ZERO
+
       end select
 
     end function mgxsiso_get_xs
 
-    pure function mgxsang_get_xs(this, xstype, gin, gout, uvw, mu) result(xs)
+    pure function mgxsang_get_xs(this, xstype, gin, gout, uvw, mu, dg) result(xs)
       class(MgxsAngle), intent(in)  :: this   ! The Mgxs to initialize
       character(*) , intent(in)     :: xstype ! Type of xs requested
-      integer, intent(in)           :: gin    ! Incoming Energy group
-      integer, optional, intent(in) :: gout   ! Outgoing Energy group
-      real(8), optional, intent(in) :: uvw(3) ! Requested Angle
+      integer, intent(in)           :: gin    ! Incoming energy group
+      integer, optional, intent(in) :: gout   ! Outgoing energy group
+      real(8), optional, intent(in) :: uvw(3) ! Requested angle
       real(8), optional, intent(in) :: mu     ! Change in angle
+      integer, optional, intent(in) :: dg     ! Delayed group
       real(8)                       :: xs     ! Requested x/s
 
       integer :: iazi, ipol
 
       if (present(uvw)) then
+
         call find_angle(this % polar, this % azimuthal, uvw, iazi, ipol)
+
         select case(xstype)
+
         case('total')
           xs = this % total(gin, iazi, ipol)
+
         case('absorption')
           xs = this % absorption(gin, iazi, ipol)
+
         case('fission')
-          if (allocated(this % fission)) then
-            xs = this % fission(gin, iazi, ipol)
-          else
-            xs = ZERO
-          end if
+          xs = this % fission(gin, iazi, ipol)
+
         case('kappa_fission')
-          if (allocated(this % k_fission)) then
-            xs = this % k_fission(gin, iazi, ipol)
+          xs = this % kappa_fission(gin, iazi, ipol)
+
+        case('prompt_nu_fission')
+          xs = this % prompt_nu_fission(gin, iazi, ipol)
+
+        case('delayed_nu_fission')
+          if (present(dg)) then
+            xs = this % delayed_nu_fission(gin, iazi, ipol, dg)
           else
-            xs = ZERO
+            xs = sum(this % delayed_nu_fission(gin, iazi, ipol, :))
           end if
+
         case('nu_fission')
-          xs = this % nu_fission(gin, iazi, ipol)
-        case('chi')
+          xs = this % prompt_nu_fission(gin, iazi, ipol) + &
+               sum(this % delayed_nu_fission(gin, iazi, ipol, :))
+
+      case('nu')
+        if (this % fission(gin, iazi, ipol) > ZERO) then
+          xs = (sum(this % delayed_nu_fission(gin, iazi, ipol, :)) + &
+               this % prompt_nu_fission(gin, iazi, ipol)) / &
+               this % fission(gin, iazi, ipol)
+        else
+          xs = ZERO
+        end if
+
+      case('nu_prompt')
+        if (this % fission(gin, iazi, ipol) > ZERO) then
+          xs = this % prompt_nu_fission(gin, iazi, ipol) / &
+               this % fission(gin, iazi, ipol)
+        else
+          xs = ZERO
+        end if
+
+      case('nu_delayed')
+        if (this % fission(gin, iazi, ipol) > ZERO) then
+          if (present(dg)) then
+            xs = this % delayed_nu_fission(gin, iazi, ipol, dg) / &
+                 this % fission(gin, iazi, ipol)
+          else
+            xs = sum(this % delayed_nu_fission(gin, iazi, ipol, :)) / &
+                 this % fission(gin, iazi, ipol)
+          end if
+        else
+          xs = ZERO
+        end if
+
+        case('chi_prompt')
           if (present(gout)) then
-            xs = this % chi(gout, gin, iazi, ipol)
+            xs = this % chi_prompt(gout, gin, iazi, ipol)
           else
             ! Not sure you would want a 1 or a 0, but here you go!
-            xs = sum(this % chi(:, gin, iazi, ipol))
+            xs = sum(this % chi_prompt(:, gin, iazi, ipol))
           end if
+
+        case('chi_delayed')
+          if (present(gout)) then
+            xs = this % chi_delayed(gout, gin, iazi, ipol)
+          else
+            ! Not sure you would want a 1 or a 0, but here you go!
+            xs = sum(this % chi_delayed(:, gin, iazi, ipol))
+          end if
+
+        case('decay_rate')
+          if (present(dg)) then
+            xs = this % decay_rate(iazi, ipol, dg)
+          else
+            xs = this % decay_rate(iazi, ipol, 1)
+          end if
+
+        case('velocity')
+          xs = this % velocity(gin, iazi, ipol)
+
         case('scatter')
           if (present(gout)) then
             if (gout < this % scatter(iazi, ipol) % obj % gmin(gin) .or. &
@@ -1258,6 +2034,7 @@ module mgxs_header
           else
             xs = this % scatter(iazi, ipol) % obj % scattxs(gin)
           end if
+
         case('scatter/mult')
           if (present(gout)) then
             if (gout < this % scatter(iazi, ipol) % obj % gmin(gin) .or. &
@@ -1273,6 +2050,7 @@ module mgxs_header
                  (dot_product(this % scatter(iazi, ipol) % obj % mult(gin) % data, &
                   this % scatter(iazi, ipol) % obj % energy(gin) % data))
           end if
+
         case('scatter*f_mu/mult','scatter*f_mu')
           if (present(gout)) then
             if (gout < this % scatter(iazi, ipol) % obj % gmin(gin) .or. &
@@ -1294,9 +2072,11 @@ module mgxs_header
             ! user of this code wants the complete 1-outgoing group distribution
             ! which Im not sure what they would do with that.
           end if
+
         case default
           xs = ZERO
         end select
+
       else
         xs = ZERO
       end if
@@ -1319,6 +2099,7 @@ module mgxs_header
       else
         this % name      = mat % name
       end if
+
       this % zaid        = -mat % id
       this % fissionable = mat % fissionable
       this % scatt_type  = scatt_type
@@ -1330,11 +2111,13 @@ module mgxs_header
 
     end subroutine mgxs_combine
 
-    subroutine mgxsiso_combine(this, mat, nuclides, groups, max_order, scatt_type)
+    subroutine mgxsiso_combine(this, mat, nuclides, energy_groups, &
+         delayed_groups, max_order, scatt_type)
       class(MgxsIso), intent(inout)       :: this ! The Mgxs to initialize
       type(Material), pointer, intent(in) :: mat  ! base material
       type(MgxsContainer), intent(in)     :: nuclides(:) ! List of nuclides to harvest from
-      integer, intent(in)                 :: groups     ! Number of E groups
+      integer, intent(in)                 :: energy_groups  ! Energy groups
+      integer, intent(in)                 :: delayed_groups ! Delayed groups
       integer, intent(in)                 :: max_order  ! Maximum requested order
       integer, intent(in)                 :: scatt_type ! How is data presented
 
@@ -1355,6 +2138,7 @@ module mgxs_header
       type is (MgxsIso)
         order = size(nuc % scatter % dist(1) % data, dim=1)
       end select
+
       ! If we have tabular only data, then make sure all datasets have same size
       if (scatt_type == ANGLE_HISTOGRAM) then
         ! Check all scattering data to ensure it is the same size
@@ -1366,6 +2150,7 @@ module mgxs_header
                                   & same length!")
           end select
         end do
+
         ! Ok, got our order, store the dimensionality
         order_dim = order
 
@@ -1382,6 +2167,7 @@ module mgxs_header
                                   & same length!")
           end select
         end do
+
         ! Ok, got our order, store the dimensionality
         order_dim = order
 
@@ -1402,6 +2188,7 @@ module mgxs_header
         ! Now need to compare this material maximum scattering order with
         ! the problem wide max scatt order and use whichever is lower
         order = min(mat_max_order, max_order)
+
         ! Ok, got our order, store the dimensionality
         order_dim = order + 1
 
@@ -1410,25 +2197,46 @@ module mgxs_header
       end if
 
       ! Allocate and initialize data needed for macro_xs(i_mat) object
-      allocate(this % total(groups))
+      allocate(this % total(energy_groups))
       this % total(:) = ZERO
-      allocate(this % absorption(groups))
+
+      allocate(this % absorption(energy_groups))
       this % absorption(:) = ZERO
-      allocate(this % fission(groups))
+
+      allocate(this % fission(energy_groups))
       this % fission(:) = ZERO
-      allocate(this % k_fission(groups))
-      this % k_fission(:) = ZERO
-      allocate(this % nu_fission(groups))
-      this % nu_fission(:) = ZERO
-      allocate(this % chi(groups,groups))
-      this % chi(:, :) = ZERO
-      allocate(temp_mult(groups,groups))
+
+      allocate(this % kappa_fission(energy_groups))
+      this % kappa_fission(:) = ZERO
+
+      allocate(this % prompt_nu_fission(energy_groups))
+      this % prompt_nu_fission(:) = ZERO
+
+      allocate(this % delayed_nu_fission(energy_groups, delayed_groups))
+      this % delayed_nu_fission(:, :) = ZERO
+
+      allocate(this % chi_prompt(energy_groups, energy_groups))
+      this % chi_prompt(:, :) = ZERO
+
+      allocate(this % chi_delayed(energy_groups, energy_groups))
+      this % chi_delayed(:, :) = ZERO
+
+      allocate(this % velocity(energy_groups))
+      this % velocity(:) = ZERO
+
+      allocate(this % decay_rate(delayed_groups))
+      this % decay_rate(:) = ZERO
+
+      allocate(temp_mult(energy_groups,energy_groups))
       temp_mult(:, :) = ZERO
-      allocate(mult_num(groups,groups))
+
+      allocate(mult_num(energy_groups,energy_groups))
       mult_num(:, :) = ZERO
-      allocate(mult_denom(groups,groups))
+
+      allocate(mult_denom(energy_groups,energy_groups))
       mult_denom(:, :) = ZERO
-      allocate(scatt_coeffs(order_dim,groups,groups))
+
+      allocate(scatt_coeffs(order_dim,energy_groups,energy_groups))
       scatt_coeffs(:, :, :) = ZERO
 
       ! Add contribution from each nuclide in material
@@ -1441,19 +2249,34 @@ module mgxs_header
         type is (MgxsIso)
           ! Add contributions to total, absorption, and fission data (if necessary)
           this % total(:) = this % total(:) + atom_density * nuc % total(:)
+
           this % absorption(:) = this % absorption(:) + &
                atom_density * nuc % absorption(:)
+
+          this % decay_rate(:) = this % decay_rate(:) + &
+               atom_density * nuc % decay_rate(:)
+
+          this % velocity(:) = this % velocity(:) + &
+               atom_density * nuc % velocity(:)
+
           if (nuc % fissionable) then
-            this % chi(:, :) = this % chi(:, :) + atom_density * nuc % chi(:, :)
-            this % nu_fission(:) = this % nu_fission(:)+ atom_density * &
-                 nuc % nu_fission(:)
-            if (allocated(nuc % fission)) then
-              this % fission(:) = this % fission(:) + atom_density * nuc % fission(:)
-            end if
-            if (allocated(nuc % k_fission)) then
-              this % k_fission(:) = this % k_fission(:) + atom_density * &
-                   nuc % k_fission(:)
-            end if
+            this % chi_prompt(:, :) = this % chi_prompt(:, :) + &
+                 atom_density * nuc % chi_prompt(:, :)
+
+            this % chi_delayed(:, :) = this % chi_delayed(:, :) + &
+                 atom_density * nuc % chi_delayed(:, :)
+
+            this % prompt_nu_fission(:) = this % prompt_nu_fission(:)+ &
+                 atom_density * nuc % prompt_nu_fission(:)
+
+            this % delayed_nu_fission(:,:) = this % delayed_nu_fission(:,:)+ &
+                 atom_density * nuc % delayed_nu_fission(:,:)
+
+            this % fission(:) = this % fission(:) + &
+                 atom_density * nuc % fission(:)
+
+            this % kappa_fission(:) = this % kappa_fission(:) + &
+                 atom_density * nuc % kappa_fission(:)
           end if
 
           ! Get the multiplication matrix
@@ -1467,12 +2290,15 @@ module mgxs_header
           !              sum_i(N_i*(nuscatt_{i,g,g'} / mult_{i,g,g'}))
           ! nuscatt_{i,g,g'} can be reconstructed from scatter % energy and
           ! scatter % scattxs
-          do gin = 1, groups
+          do gin = 1, energy_groups
             do gout = nuc % scatter % gmin(gin), nuc % scatter % gmax(gin)
+
               nuscatt = nuc % scatter % scattxs(gin) * &
                    nuc % scatter % energy(gin) % data(gout)
+
               mult_num(gout, gin) = mult_num(gout, gin) + atom_density * &
                    nuscatt
+
               if (nuc % scatter % mult(gin) % data(gout) > ZERO) then
                 mult_denom(gout, gin) = mult_denom(gout,gin) + atom_density * &
                      nuscatt / nuc % scatter % mult(gin) % data(gout)
@@ -1496,8 +2322,8 @@ module mgxs_header
       end do
 
       ! Obtain temp_mult
-      do gin = 1, groups
-        do gout = 1, groups
+      do gin = 1, energy_groups
+        do gout = 1, energy_groups
           if (mult_denom(gout, gin) > ZERO) then
             temp_mult(gout, gin) = mult_num(gout, gin) / mult_denom(gout, gin)
           else
@@ -1509,26 +2335,18 @@ module mgxs_header
       ! Initialize the ScattData Object
       call this % scatter % init(temp_mult, scatt_coeffs)
 
-      ! Now normalize chi
-      if (mat % fissionable) then
-        do gin = 1, groups
-          norm =  sum(this % chi(:, gin))
-          if (norm > ZERO) then
-            this % chi(:, gin) = this % chi(:, gin) / norm
-          end if
-        end do
-      end if
-
       ! Deallocate temporaries
       deallocate(scatt_coeffs, temp_mult, mult_num, mult_denom)
 
     end subroutine mgxsiso_combine
 
-    subroutine mgxsang_combine(this, mat, nuclides, groups, max_order, scatt_type)
+    subroutine mgxsang_combine(this, mat, nuclides, energy_groups, &
+         delayed_groups, max_order, scatt_type)
       class(MgxsAngle), intent(inout)     :: this ! The Mgxs to initialize
       type(Material), pointer, intent(in) :: mat  ! base material
       type(MgxsContainer), intent(in)     :: nuclides(:) ! List of nuclides to harvest from
-      integer, intent(in)                 :: groups     ! Number of E groups
+      integer, intent(in)                 :: energy_groups  ! Energy groups
+      integer, intent(in)                 :: delayed_groups ! Delayed groups
       integer, intent(in)                 :: max_order  ! Maximum requested order
       integer, intent(in)                 :: scatt_type ! Legendre or Tabular Scatt?
 
@@ -1549,13 +2367,17 @@ module mgxs_header
       n_pol = -1
       n_azi = -1
       do i = 1, mat % n_nuclides
+
         select type(nuc => nuclides(mat % nuclide(i)) % obj)
         type is (MgxsAngle)
+
           if (n_pol == -1) then
             n_pol = nuc % n_pol
             n_azi = nuc % n_azi
+
             allocate(this % polar(n_pol))
             this % polar(:) = nuc % polar(:)
+
             allocate(this % azimuthal(n_azi))
             this % azimuthal(:) = nuc % azimuthal(:)
           else
@@ -1643,25 +2465,46 @@ module mgxs_header
       end if
 
       ! Allocate and initialize data within macro_xs(i_mat) object
-      allocate(this % total(groups, n_azi, n_pol))
+      allocate(this % total(energy_groups, n_azi, n_pol))
       this % total(:, :, :) = ZERO
-      allocate(this % absorption(groups, n_azi, n_pol))
+
+      allocate(this % absorption(energy_groups, n_azi, n_pol))
       this % absorption(:, :, :) = ZERO
-      allocate(this % fission(groups, n_azi, n_pol))
+
+      allocate(this % fission(energy_groups, n_azi, n_pol))
       this % fission(:, :, :) = ZERO
-      allocate(this % k_fission(groups, n_azi, n_pol))
-      this % k_fission(:, :, :) = ZERO
-      allocate(this % nu_fission(groups, n_azi, n_pol))
-      this % nu_fission(:, :, :) = ZERO
-      allocate(this % chi(groups, groups, n_azi, n_pol))
-      this % chi(:, :, :, :) = ZERO
-      allocate(temp_mult(groups, groups, n_azi, n_pol))
+
+      allocate(this % decay_rate(n_azi, n_pol, delayed_groups))
+      this % decay_rate(:, :, :) = ZERO
+
+      allocate(this % velocity(energy_groups, n_azi, n_pol))
+      this % velocity(:, :, :) = ZERO
+
+      allocate(this % kappa_fission(energy_groups, n_azi, n_pol))
+      this % kappa_fission(:, :, :) = ZERO
+
+      allocate(this % prompt_nu_fission(energy_groups, n_azi, n_pol))
+      this % prompt_nu_fission(:, :, :) = ZERO
+
+      allocate(this % delayed_nu_fission(energy_groups, n_azi, n_pol, delayed_groups))
+      this % delayed_nu_fission(:, :, :, :) = ZERO
+
+      allocate(this % chi_prompt(energy_groups, energy_groups, n_azi, n_pol))
+      this % chi_prompt(:, :, :, :) = ZERO
+
+      allocate(this % chi_delayed(energy_groups, energy_groups, n_azi, n_pol))
+      this % chi_delayed(:, :, :, :) = ZERO
+
+      allocate(temp_mult(energy_groups, energy_groups, n_azi, n_pol))
       temp_mult(:, :, :, :) = ZERO
-      allocate(mult_num(groups, groups, n_azi, n_pol))
+
+      allocate(mult_num(energy_groups, energy_groups, n_azi, n_pol))
       mult_num(:, :, :, :) = ZERO
-      allocate(mult_denom(groups, groups, n_azi, n_pol))
+
+      allocate(mult_denom(energy_groups, energy_groups, n_azi, n_pol))
       mult_denom(:, :, :, :) = ZERO
-      allocate(scatt_coeffs(order_dim, groups, groups, n_azi, n_pol))
+
+      allocate(scatt_coeffs(order_dim, energy_groups, energy_groups, n_azi, n_pol))
       scatt_coeffs(:, :, :, :, :) = ZERO
 
       ! Add contribution from each nuclide in material
@@ -1671,26 +2514,46 @@ module mgxs_header
 
         ! Perform our operations which depend upon the type
         select type(nuc => nuclides(mat % nuclide(i)) % obj)
+
         type is (MgxsIso)
           call fatal_error("Invalid passing of MgxsIso to MgxsAngle object")
+
         type is (MgxsAngle)
+
           ! Add contributions to total, absorption, and fission data (if necessary)
           this % total(:, :, :) = this % total(:, :, :) + &
                atom_density * nuc % total(:, :, :)
+
           this % absorption(:, :, :) = this % absorption(:, :, :) + &
                atom_density * nuc % absorption(:, :, :)
+
+          this % decay_rate(:, :, :) = this % decay_rate(:, :, :) + &
+               atom_density * nuc % decay_rate(:, :, :)
+
+          this % velocity(:, :, :) = this % velocity(:, :, :) + &
+               atom_density * nuc % velocity(:, :, :)
+
           if (nuc % fissionable) then
-            this % chi = this % chi + atom_density * nuc % chi
-            this % nu_fission(:, :, :) = this % nu_fission(:, :, :) + &
-                 atom_density * nuc % nu_fission(:, :, :)
-            if (allocated(nuc % fission)) then
-              this % fission(:, :, :) = this % fission(:, :, :) + &
-                   atom_density * nuc % fission(:, :, :)
-            end if
-            if (allocated(nuc % k_fission)) then
-              this % k_fission(:, :, :) = this % k_fission(:, :, :) + &
-                   atom_density * nuc % k_fission(:, :, :)
-            end if
+
+            this % chi_prompt = this % chi_prompt + &
+                 atom_density * nuc % chi_prompt
+
+            this % chi_delayed = this % chi_delayed + &
+                 atom_density * nuc % chi_delayed
+
+            this % prompt_nu_fission(:, :, :) = &
+                 this % prompt_nu_fission(:, :, :) + &
+                 atom_density * nuc % prompt_nu_fission(:, :, :)
+
+            this % delayed_nu_fission(:, :, :, :) = &
+                 this % delayed_nu_fission(:, :, :, :) + &
+                 atom_density * nuc % delayed_nu_fission(:, :, :, :)
+
+            this % fission(:, :, :) = this % fission(:, :, :) + &
+                 atom_density * nuc % fission(:, :, :)
+
+            this % kappa_fission(:, :, :) = this % kappa_fission(:, :, :) + &
+                 atom_density * nuc % kappa_fission(:, :, :)
           end if
 
           ! Get the multiplication matrix
@@ -1706,13 +2569,16 @@ module mgxs_header
           ! scatter % scattxs
           do ipol = 1, n_pol
             do iazi = 1, n_azi
-              do gin = 1, groups
+              do gin = 1, energy_groups
                 do gout = nuc % scatter(iazi, ipol) % obj % gmin(gin), &
                      nuc % scatter(iazi, ipol) % obj % gmax(gin)
+
                   nuscatt = nuc % scatter(iazi, ipol) % obj % scattxs(gin) * &
                        nuc % scatter(iazi, ipol) % obj % energy(gin) % data(gout)
+
                   mult_num(gout, gin, iazi, ipol) = mult_num(gout, gin, iazi, ipol) + &
                        atom_density * nuscatt
+
                   if (nuc % scatter(iazi, ipol) % obj % mult(gin) % data(gout) > ZERO) then
                     mult_denom(gout, gin, iazi, ipol) = &
                          mult_denom(gout, gin, iazi, ipol) + &
@@ -1744,8 +2610,8 @@ module mgxs_header
       ! Obtain temp_mult
       do ipol = 1, n_pol
         do iazi = 1, n_azi
-          do gin = 1, groups
-            do gout = 1, groups
+          do gin = 1, energy_groups
+            do gout = 1, energy_groups
               if (mult_denom(gout, gin, iazi, ipol) > ZERO) then
                 temp_mult(gout, gin, iazi, ipol) = &
                      mult_num(gout, gin, iazi, ipol) / &
@@ -1770,10 +2636,23 @@ module mgxs_header
       if (mat % fissionable) then
         do ipol = 1, n_pol
           do iazi = 1, n_azi
-            do gin = 1, groups
-              norm =  sum(this % chi(:, gin, iazi, ipol))
+            do gin = 1, energy_groups
+              norm =  sum(this % chi_prompt(:, gin, iazi, ipol))
               if (norm > ZERO) then
-                this % chi(:, gin, iazi, ipol) = this % chi(:, gin, iazi, ipol) / norm
+                this % chi_prompt(:, gin, iazi, ipol) = &
+                     this % chi_prompt(:, gin, iazi, ipol) / norm
+              end if
+            end do
+          end do
+        end do
+
+        do ipol = 1, n_pol
+          do iazi = 1, n_azi
+            do gin = 1, energy_groups
+              norm =  sum(this % chi_delayed(:, gin, iazi, ipol))
+              if (norm > ZERO) then
+                this % chi_delayed(:, gin, iazi, ipol) = &
+                     this % chi_delayed(:, gin, iazi, ipol) / norm
               end if
             end do
           end do
@@ -1789,44 +2668,131 @@ module mgxs_header
 ! MGXS*_SAMPLE_FISSION_ENERGY samples the outgoing energy from a fission event
 !===============================================================================
 
-    function mgxsiso_sample_fission_energy(this, gin, uvw) result(gout)
-      class(MgxsIso), intent(in) :: this   ! Data to work with
+    function mgxsiso_sample_fission_energy(this, gin, uvw, dg) result(gout)
+      class(MgxsIso), intent(in)    :: this   ! Data to work with
       integer, intent(in)           :: gin    ! Incoming energy group
       real(8), intent(in)           :: uvw(3) ! Particle Direction
+      integer, intent(inout)        :: dg     ! Delayed group
       integer                       :: gout   ! Sampled outgoing group
-      real(8) :: xi               ! Our random number
-      real(8) :: prob             ! Running probability
+      real(8) :: xi_pd            ! Our random number for prompt/delayed
+      real(8) :: xi_gout          ! Our random number for gout
+      real(8) :: prob_pd          ! Running probability for prompt/delayed
+      real(8) :: prob_gout        ! Running probability for gout
 
-      xi = prn()
-      gout = 1
-      prob = this % chi(gout,gin)
+      ! Get nu and nu_prompt
+      real(8) :: nu, nu_prompt
+      nu = this % get_xs('nu', gin)
+      nu_prompt = this % get_xs('nu_prompt', gin)
 
-      do while (prob < xi)
-        gout = gout + 1
-        prob = prob + this % chi(gout,gin)
-      end do
+      ! Sample random numbers
+      xi_pd = prn()
+      xi_gout = prn()
+
+      ! Neutron is born prompt
+      if (xs_pd < nu_prompt / nu) then
+
+        ! set the delayed group for the particle born from fission to 0
+        dg = 0
+
+        gout = 1
+        prob_gout = this % chi_prompt(gout, gin)
+
+        do while (prob_gout < xi_gout)
+          gout = gout + 1
+          prob_gout = prob_gout + this % chi_prompt(gout, gin)
+        end do
+
+        ! Neutron is born delayed
+      else
+
+        ! Get the delayed group
+        dg = 0
+        prob_pd = nu_prompt / nu
+
+        do while (xi_pd < prob_pd)
+          dg = dg + 1
+          prob_pd = prob_pd + this % get_xs('nu_delayed', gin, dg=dg) &
+               / nu
+        end do
+
+        ! Adjust dg in case of round off error
+        dg = min(dg, num_delayed_groups)
+
+        ! Get the outgoing group
+        gout = 1
+        prob_gout = this % chi_delayed(gout, gin)
+
+        do while (prob < xi_gout)
+          gout = gout + 1
+          prob_gout = prob_gout + this % chi_delayed(gout, gin)
+        end do
+      end if
 
     end function mgxsiso_sample_fission_energy
 
-    function mgxsang_sample_fission_energy(this, gin, uvw) result(gout)
+    function mgxsang_sample_fission_energy(this, gin, uvw, dg) result(gout)
       class(MgxsAngle), intent(in) :: this  ! Data to work with
-      integer, intent(in)             :: gin    ! Incoming energy group
-      real(8), intent(in)             :: uvw(3) ! Particle Direction
-      integer                         :: gout   ! Sampled outgoing group
-      real(8) :: xi               ! Our random number
-      real(8) :: prob             ! Running probability
+      integer, intent(in)          :: gin    ! Incoming energy group
+      real(8), intent(in)          :: uvw(3) ! Direction vector
+      integer, intent(inout)       :: dg     ! Delayed group
+      integer                      :: gout   ! Sampled outgoing group
+      real(8) :: xi_pd            ! Our random number for prompt/delayed
+      real(8) :: xi_gout          ! Our random number for gout
+      real(8) :: prob_pd          ! Running probability for prompt/delayed
+      real(8) :: prob_gout        ! Running probability for gout
+      real(8) :: nu, nu_prompt
       integer :: iazi, ipol
 
       call find_angle(this % polar, this % azimuthal, uvw, iazi, ipol)
 
-      xi = prn()
-      gout = 1
-      prob = this % chi(gout, gin, iazi, ipol)
+      ! Get nu and nu_prompt
+      nu = this % get_xs('nu', gin, uvw=uvw)
+      nu_prompt = this % get_xs('nu_prompt', gin, uvw=uvw)
 
-      do while (prob < xi)
-        gout = gout + 1
-        prob = prob + this % chi(gout, gin, iazi, ipol)
-      end do
+      ! Sample random numbers
+      xi_pd = prn()
+      xi_gout = prn()
+
+      ! Neutron is born prompt
+      if (xs_pd < nu_prompt / nu) then
+
+        ! set the delayed group for the particle born from fission to 0
+        dg = 0
+
+        gout = 1
+        prob_gout = this % chi_prompt(gout, gin, iazi, ipol)
+
+        do while (prob_gout < xi_gout)
+          gout = gout + 1
+          prob_gout = prob_gout + this % chi_prompt(gout, gin, iazi, ipol)
+        end do
+
+        ! Neutron is born delayed
+      else
+
+        ! Get the delayed group
+        dg = 0
+        prob_pd = nu_prompt / nu
+
+        do while (xi_pd < prob_pd)
+          dg = dg + 1
+          prob_pd = prob_pd + &
+               this % get_xs('nu_delayed', gin, uvw=uvw, dg=dg) &
+               / nu
+        end do
+
+        ! Adjust dg in case of round off error
+        dg = min(dg, num_delayed_groups)
+
+        ! Get the outgoing group
+        gout = 1
+        prob_gout = this % chi_delayed(gout, gin, iazi, ipol)
+
+        do while (prob < xi_gout)
+          gout = gout + 1
+          prob_gout = prob_gout + this % chi_delayed(gout, gin, iazi, ipol)
+        end do
+      end if
 
     end function mgxsang_sample_fission_energy
 
@@ -1876,7 +2842,8 @@ module mgxs_header
       xs % elastic       = this % scatter % scattxs(gin)
       xs % absorption    = this % absorption(gin)
       xs % fission       = this % fission(gin)
-      xs % nu_fission    = this % nu_fission(gin)
+      xs % nu_fission    = this % prompt_nu_fission(gin) + &
+           sum(this % delayed_nu_fission(gin, :))
 
     end subroutine mgxsiso_calculate_xs
 
@@ -1893,7 +2860,8 @@ module mgxs_header
       xs % elastic       = this % scatter(iazi, ipol) % obj % scattxs(gin)
       xs % absorption    = this % absorption(gin, iazi, ipol)
       xs % fission       = this % fission(gin, iazi, ipol)
-      xs % nu_fission    = this % nu_fission(gin, iazi, ipol)
+      xs % nu_fission    = this % prompt_nu_fission(gin, iazi, ipol) + &
+           sum(this % delayed_nu_fission(gin, iazi, ipol, :))
 
     end subroutine mgxsang_calculate_xs
 
@@ -1911,7 +2879,6 @@ module mgxs_header
       real(8) :: my_pol, my_azi, dangle
 
       ! Convert uvw to polar and azi
-
       my_pol = acos(uvw(3))
       my_azi = atan2(uvw(2), uvw(1))
 
