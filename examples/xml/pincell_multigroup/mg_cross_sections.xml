@@ -12,8 +12,8 @@
   -->
   <xsdata>
     <!-- Meta data for this data -->
-    <name>UO2.300K</name>
-    <alias>UO2.300K</alias>
+    <name>UO2</name>
+    <alias>UO2</alias>
     <kT> 2.53E-8 </kT> <!-- in MeV -->
     <order>0</order>
     <fissionable>true</fissionable>
@@ -43,6 +43,10 @@
     <chi_delayed>
       5.8791E-01 4.1176E-01 3.3906E-04 1.1761E-07 0.0000E+00 0.0000E+00 0.0000E+00
     </chi_delayed>
+
+    <decay_rate>
+      0.1 0.2
+    </decay_rate>
 
     <fission>
       7.21206E-03 8.19301E-04 6.45320E-03 1.85648E-02 1.78084E-02 8.30348E-02 2.16004E-01
@@ -78,8 +82,8 @@
 
   <xsdata>
     <!-- Meta data for this data -->
-    <name>MOX1.300K</name>
-    <alias>MOX1.300K</alias>
+    <name>MOX1</name>
+    <alias>MOX1</alias>
     <kT> 2.53E-8 </kT> <!-- in MeV -->
     <order>0</order>
     <fissionable>true</fissionable>
@@ -135,8 +139,8 @@
 
   <xsdata>
     <!-- Meta data for this data -->
-    <name>MOX2.300K</name>
-    <alias>MOX2.300K</alias>
+    <name>MOX2</name>
+    <alias>MOX2</alias>
     <kT> 2.53E-8 </kT> <!-- in MeV -->
     <order>0</order>
     <fissionable>true</fissionable>
@@ -191,8 +195,8 @@
 
   <xsdata>
     <!-- Meta data for this data -->
-    <name>MOX3.300K</name>
-    <alias>MOX3.300K</alias>
+    <name>MOX3</name>
+    <alias>MOX3</alias>
     <kT> 2.53E-8 </kT> <!-- in MeV -->
     <order>0</order>
     <fissionable>true</fissionable>
@@ -247,8 +251,8 @@
 
   <xsdata>
     <!-- Meta data for this data -->
-    <name>FC.300K</name>
-    <alias>FC.300K</alias>
+    <name>FC</name>
+    <alias>FC</alias>
     <kT> 2.53E-8 </kT> <!-- in MeV -->
     <order>0</order>
     <fissionable>true</fissionable>
@@ -297,8 +301,8 @@
 
   <xsdata>
     <!-- Meta data for this data -->
-    <name>GT.300K</name>
-    <alias>GT.300K</alias>
+    <name>GT</name>
+    <alias>GT</alias>
     <kT> 2.53E-8 </kT> <!-- in MeV -->
     <order>0</order>
     <fissionable>false</fissionable>
@@ -329,8 +333,8 @@
 
   <xsdata>
     <!-- Meta data for this data -->
-    <name>LWTR.300K</name>
-    <alias>LWTR.300K</alias>
+    <name>LWTR</name>
+    <alias>LWTR</alias>
     <kT> 2.53E-8 </kT> <!-- in MeV -->
     <order>0</order>
     <fissionable>false</fissionable>
@@ -362,8 +366,8 @@
 
   <xsdata>
     <!-- Meta data for this data -->
-    <name>CR.300K</name>
-    <alias>CR.300K</alias>
+    <name>CR</name>
+    <alias>CR</alias>
     <kT> 2.53E-8 </kT> <!-- in MeV -->
     <order>0</order>
     <fissionable>false</fissionable>

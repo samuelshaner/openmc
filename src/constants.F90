@@ -268,6 +268,12 @@ module constants
        JENDL_33   = 7, &
        JENDL_40   = 8
 
+  ! Temperature treatment method
+  integer, parameter :: &
+       TEMPERATURE_NEAREST = 1, &
+       TEMPERATURE_INTERPOLATION = 2, &
+       TEMPERATURE_MULTIPOLE = 3
+
   ! ============================================================================
   ! TALLY-RELATED CONSTANTS
 
@@ -290,7 +296,7 @@ module constants
        EVENT_ABSORB  =  2
 
   ! Tally score type
-  integer, parameter :: N_SCORE_TYPES = 23
+  integer, parameter :: N_SCORE_TYPES = 24
   integer, parameter :: &
        SCORE_FLUX               = -1,  & ! flux
        SCORE_TOTAL              = -2,  & ! total reaction rate
@@ -314,7 +320,8 @@ module constants
        SCORE_PROMPT_NU_FISSION  = -20, & ! prompt neutron production rate
        SCORE_INVERSE_VELOCITY   = -21, & ! flux-weighted inverse velocity
        SCORE_FISS_Q_PROMPT      = -22, & ! prompt fission Q-value
-       SCORE_FISS_Q_RECOV       = -23    ! recoverable fission Q-value
+       SCORE_FISS_Q_RECOV       = -23, & ! recoverable fission Q-value
+       SCORE_DECAY_RATE         = -24    ! delayed neutron precursor decay rate
 
   ! Maximum scattering order supported
   integer, parameter :: MAX_ANG_ORDER = 10
@@ -406,12 +413,6 @@ module constants
   ! input file!
   integer, parameter :: ERROR_INT  = -huge(0)
   real(8), parameter :: ERROR_REAL = -huge(0.0_8) * 0.917826354_8
-
-  ! Energy grid methods
-  integer, parameter :: &
-       GRID_NUCLIDE    = 1, & ! unique energy grid for each nuclide
-       GRID_MAT_UNION  = 2, & ! material union grids with pointers
-       GRID_LOGARITHM  = 3    ! lethargy mapping
 
   ! Running modes
   integer, parameter ::        &

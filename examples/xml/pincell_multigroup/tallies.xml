@@ -14,4 +14,8 @@
         <filter bins="1" type="mesh" />
         <scores>delayed-nu-fission</scores>
     </tally>
+    <tally id="3" name="tally 2">
+        <filter bins="1" type="mesh" />
+        <scores>decay-rate</scores>
+    </tally>
 </tallies>
