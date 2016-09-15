@@ -379,7 +379,7 @@ contains
               ! neutrons were emitted with different energies, multiple
               ! outgoing energy bins may have been scored to. The following
               ! logic treats this special case and results to multiple bins
-              call score_fission_eout_ce(p, t, score_index, score_bin)
+              call score_fission_eout(p, t, score_index, score_bin, .true.)
               cycle SCORE_LOOP
             end if
           end if
@@ -422,7 +422,7 @@ contains
               ! neutrons were emitted with different energies, multiple
               ! outgoing energy bins may have been scored to. The following
               ! logic treats this special case and results to multiple bins
-              call score_fission_eout_ce(p, t, score_index, score_bin)
+              call score_fission_eout(p, t, score_index, score_bin, .true.)
               cycle SCORE_LOOP
             end if
           end if
@@ -502,7 +502,7 @@ contains
               ! neutrons were emitted with different energies, multiple
               ! outgoing energy bins may have been scored to. The following
               ! logic treats this special case and results to multiple bins
-              call score_fission_eout_ce(p, t, score_index, score_bin)
+              call score_fission_eout(p, t, score_index, score_bin, .true.)
               cycle SCORE_LOOP
             end if
           end if
@@ -1268,7 +1268,7 @@ contains
               ! neutrons were emitted with different energies, multiple
               ! outgoing energy bins may have been scored to. The following
               ! logic treats this special case and results to multiple bins
-              call score_fission_eout_mg(p, t, score_index, score_bin)
+              call score_fission_eout(p, t, score_index, score_bin, .false.)
               cycle SCORE_LOOP
             end if
           end if
@@ -1313,7 +1313,7 @@ contains
               ! neutrons were emitted with different energies, multiple
               ! outgoing energy bins may have been scored to. The following
               ! logic treats this special case and results to multiple bins
-              call score_fission_eout_mg(p, t, score_index, score_bin)
+              call score_fission_eout(p, t, score_index, score_bin, .false.)
               cycle SCORE_LOOP
             end if
           end if
@@ -1378,7 +1378,7 @@ contains
               ! neutrons were emitted with different energies, multiple
               ! outgoing energy bins may have been scored to. The following
               ! logic treats this special case and results to multiple bins
-              call score_fission_eout_mg(p, t, score_index, score_bin)
+              call score_fission_eout(p, t, score_index, score_bin, .false.)
               cycle SCORE_LOOP
             end if
           end if
@@ -1986,12 +1986,13 @@ contains
 ! neutrons produced with different energies.
 !===============================================================================
 
-  subroutine score_fission_eout_ce(p, t, i_score, score_bin)
+  subroutine score_fission_eout(p, t, i_score, score_bin, run_CE)
 
     type(Particle), intent(in)       :: p
     type(TallyObject), intent(inout) :: t
     integer, intent(in)              :: i_score ! index for score
     integer, intent(in)              :: score_bin
+    logical, intent(in)              :: run_CE
 
     integer :: i             ! index of outgoing energy filter
     integer :: j             ! index of delayedgroup filter
@@ -2005,6 +2006,7 @@ contains
     real(8) :: filter_weight ! combined weight of all filters
     real(8) :: score         ! actual score
     real(8) :: E_out         ! energy of fission bank site
+    integer :: g_out         ! energy group of fission bank site
 
     ! save original outgoing energy bin and score index
     i = t % find_filter(FILTER_ENERGYOUT)
@@ -2031,139 +2033,30 @@ contains
         ! determine score based on bank site weight and keff
         score = keff * fission_bank(n_bank - p % n_bank + k) % wgt
 
-        ! determine outgoing energy from fission bank
-        E_out = fission_bank(n_bank - p % n_bank + k) % E
-
-        ! check if outgoing energy is within specified range on filter
-        if (E_out < eo_filt % bins(1) .or. E_out > eo_filt % bins(n)) cycle
-
-        ! change outgoing energy bin
-        matching_bins(i) = binary_search(eo_filt % bins, n, E_out)
-
-        ! Case for tallying prompt neutrons
-        if (score_bin == SCORE_NU_FISSION .or. &
-             (score_bin == SCORE_PROMPT_NU_FISSION .and. g == 0)) then
-
-          ! determine scoring index and weight for this filter combination
-          i_filter = sum((matching_bins(1:size(t%filters)) - 1) * t % stride) &
-               + 1
-          filter_weight = product(filter_weights(:size(t % filters)))
-
-          ! Add score to tally
-!$omp atomic
-          t % results(i_score, i_filter) % value = &
-               t % results(i_score, i_filter) % value + score * filter_weight
-
-        ! Case for tallying delayed emissions
-        else if (score_bin == SCORE_DELAYED_NU_FISSION .and. g /= 0) then
-
-          ! Get the index of delayed group filter
-          j = t % find_filter(FILTER_DELAYEDGROUP)
-
-          ! if the delayed group filter is present, tally to corresponding
-          ! delayed group bin if it exists
-          if (j > 0) then
-
-            ! declare the delayed group filter type
-            select type(dg_filt => t % filters(j) % obj)
-            type is (DelayedGroupFilter)
-
-              ! loop over delayed group bins until the corresponding bin is
-              ! found
-              do d_bin = 1, dg_filt % n_bins
-                d = dg_filt % groups(d_bin)
-
-                ! check whether the delayed group of the particle is equal to
-                ! the delayed group of this bin
-                if (d == g) then
-                  call score_fission_delayed_dg(t, d_bin, score, i_score)
-                end if
-              end do
-            end select
-
-          ! if the delayed group filter is not present, add score to tally
-          else
-
-            ! determine scoring index and weight for this filter combination
-            i_filter = sum((matching_bins(1:size(t%filters)) - 1) * t % stride)&
-                 + 1
-            filter_weight = product(filter_weights(:size(t % filters)))
-
-            ! Add score to tally
-!$omp atomic
-            t % results(i_score, i_filter) % value = &
-                 t % results(i_score, i_filter) % value + score * filter_weight
-          end if
-        end if
-      end do
-    end select
-
-    ! reset outgoing energy bin and score index
-    matching_bins(i) = bin_energyout
-
-  end subroutine score_fission_eout_ce
-
-  subroutine score_fission_eout_mg(p, t, i_score, score_bin)
-    type(Particle),    intent(in)    :: p
-    type(TallyObject), intent(inout) :: t
-    integer,           intent(in)    :: i_score   ! index for score
-    integer, intent(in)              :: score_bin
-
-    integer :: i             ! index of outgoing energy filter
-    integer :: j             ! index of delayedgroup filter
-    integer :: d             ! delayed group
-    integer :: g             ! another delayed group
-    integer :: d_bin         ! delayed group bin index
-    integer :: n             ! number of energies on filter
-    integer :: k             ! loop index for bank sites
-    integer :: bin_energyout ! original outgoing energy bin
-    integer :: i_filter      ! index for matching filter bin combination
-    real(8) :: filter_weight ! combined weight of all filters
-    real(8) :: score         ! actual score
-    integer :: g_out         ! energy group of fission bank site
-    real(8) :: E_out
-
-    ! save original outgoing energy bin and score index
-    i = t % find_filter(FILTER_ENERGYOUT)
-    bin_energyout = matching_bins(i)
-
-    ! Declare the filter type
-    select type(eo_filt => t % filters(i) % obj)
-    type is (EnergyoutFilter)
-
-      ! Get number of energies on filter
-      n = size(eo_filt % bins)
-
-      ! Since the creation of fission sites is weighted such that it is
-      ! expected to create n_particles sites, we need to multiply the
-      ! score by keff to get the true nu-fission rate. Otherwise, the sum
-      ! of all nu-fission rates would be ~1.0.
-
-      ! loop over number of particles banked
-      do k = 1, p % n_bank
-
-        ! get the delayed group
-        g = fission_bank(n_bank - p % n_bank + k) % delayed_group
-
-        ! determine score based on bank site weight and keff
-        score = keff * fission_bank(n_bank - p % n_bank + k) % wgt
-
-        if (eo_filt % matches_transport_groups) then
+        if (.not. run_CE .and. eo_filt % matches_transport_groups) then
 
           ! determine outgoing energy from fission bank
           g_out = int(fission_bank(n_bank - p % n_bank + k) % E)
 
           ! change outgoing energy bin
           matching_bins(i) = g_out
+
         else
+
           ! determine outgoing energy from fission bank
-          E_out = energy_bin_avg(int(fission_bank(n_bank - p % n_bank + k) % E))
+          if (run_CE) then
+            E_out = fission_bank(n_bank - p % n_bank + k) % E
+          else
+            E_out = energy_bin_avg(int(fission_bank(n_bank - p % n_bank + k) &
+                 % E))
+          end if
 
           ! check if outgoing energy is within specified range on filter
           if (E_out < eo_filt % bins(1) .or. E_out > eo_filt % bins(n)) cycle
 
           ! change outgoing energy bin
           matching_bins(i) = binary_search(eo_filt % bins, n, E_out)
+
         end if
 
         ! Case for tallying prompt neutrons
@@ -2227,7 +2120,7 @@ contains
     ! reset outgoing energy bin and score index
     matching_bins(i) = bin_energyout
 
-  end subroutine score_fission_eout_mg
+  end subroutine score_fission_eout
 
 !===============================================================================
 ! SCORE_FISSION_DELAYED_DG helper function used to increment the tally when a
