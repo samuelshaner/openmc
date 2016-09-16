@@ -8,8 +8,8 @@
     in an eigenvalue calculation mode
   -->
   <eigenvalue>
-    <batches>20</batches>
-    <inactive>10</inactive>
+    <batches>50</batches>
+    <inactive>25</inactive>
     <particles>1000</particles>
   </eigenvalue>
 

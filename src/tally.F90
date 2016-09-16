@@ -15,7 +15,7 @@ module tally
                               mesh_intersects_1d, mesh_intersects_2d, &
                               mesh_intersects_3d
   use mesh_header,      only: RegularMesh
-  use output,           only: header
+  use output,           only: header, write_message
   use particle_header,  only: LocalCoord, Particle
   use string,           only: to_str
   use tally_header,     only: TallyResult
@@ -164,6 +164,7 @@ contains
 
 
       case (SCORE_INVERSE_VELOCITY)
+
         ! make sure the correct energy is used
         if (t % estimator == ESTIMATOR_TRACKLENGTH) then
           E = p % E
@@ -382,7 +383,7 @@ contains
               ! neutrons were emitted with different energies, multiple
               ! outgoing energy bins may have been scored to. The following
               ! logic treats this special case and results to multiple bins
-              call score_fission_eout(p, t, score_index, score_bin, .true.)
+              call score_fission_eout(p, t, score_index, score_bin)
               cycle SCORE_LOOP
             end if
           end if
@@ -425,7 +426,7 @@ contains
               ! neutrons were emitted with different energies, multiple
               ! outgoing energy bins may have been scored to. The following
               ! logic treats this special case and results to multiple bins
-              call score_fission_eout(p, t, score_index, score_bin, .true.)
+              call score_fission_eout(p, t, score_index, score_bin)
               cycle SCORE_LOOP
             end if
           end if
@@ -505,7 +506,7 @@ contains
               ! neutrons were emitted with different energies, multiple
               ! outgoing energy bins may have been scored to. The following
               ! logic treats this special case and results to multiple bins
-              call score_fission_eout(p, t, score_index, score_bin, .true.)
+              call score_fission_eout(p, t, score_index, score_bin)
               cycle SCORE_LOOP
             end if
           end if
@@ -1105,6 +1106,8 @@ contains
     integer :: score_bin            ! scoring bin, e.g. SCORE_FLUX
     integer :: score_index          ! scoring bin index
     integer :: d                    ! delayed neutron index
+    integer :: g                    ! delayed neutron index
+    integer :: k                    ! loop index for bank sites
     integer :: d_bin                ! delayed group bin index
     integer :: dg_filter            ! index of delayed group filter
     real(8) :: score                ! analog tally score
@@ -1242,14 +1245,16 @@ contains
           end if
 
           if (i_nuclide > 0) then
-            score = score * atom_density / &
-                 nucxs % get_xs('velocity', p_g, UVW=p_uvw) * &
-                 matxs % get_xs('velocity', p_g, UVW=p_uvw)
+            score = score / nucxs % get_xs('velocity', p_g, UVW=p_uvw) / &
+                 nucxs % get_xs('total', p_g, UVW=p_uvw) * flux
+          else
+            score = score / matxs % get_xs('velocity', p_g, UVW=p_uvw) / &
+                 matxs % get_xs('total', p_g, UVW=p_uvw) * flux
           end if
+
         else
           if (i_nuclide > 0) then
-            score = flux / nucxs % get_xs('velocity', p_g, UVW=p_uvw) * &
-                 atom_density
+            score = flux / nucxs % get_xs('velocity', p_g, UVW=p_uvw)
           else
             score = flux / matxs % get_xs('velocity', p_g, UVW=p_uvw)
           end if
@@ -1370,29 +1375,37 @@ contains
 
 
       case (SCORE_FISSION)
+
+        ! make sure the correct energy is used
+        if (t % estimator == ESTIMATOR_TRACKLENGTH) then
+          p_g = p % g
+        else
+          p_g = p % last_g
+        end if
+
         if (t % estimator == ESTIMATOR_ANALOG) then
           if (survival_biasing) then
             ! No fission events occur if survival biasing is on -- need to
             ! calculate fraction of absorptions that would have resulted in
             ! fission
-            if (nucxs % get_xs('absorption', p_g, UVW=p_uvw) > ZERO) then
-              score = p % absorb_wgt * flux * &
-                   nucxs % get_xs('fission', p_g, UVW=p_uvw) / &
-                   nucxs % get_xs('absorption', p_g, UVW=p_uvw)
-            else
-              score = ZERO
-            end if
+            score = p % absorb_wgt * flux
           else
             ! Skip any non-absorption events
             if (p % event == EVENT_SCATTER) cycle SCORE_LOOP
             ! All fission events will contribute, so again we can use
             ! particle's weight entering the collision as the estimate for the
             ! fission reaction rate
-            score = p % last_wgt * flux * &
-                 nucxs % get_xs('fission', p_g, UVW=p_uvw) / &
-                 nucxs % get_xs('absorption', p_g, UVW=p_uvw)
+            score = p % last_wgt * flux
           end if
-
+          if (i_nuclide > 0) then
+            score = score * atom_density * &
+                 nucxs % get_xs('fission', p_g, UVW=p_uvw) / &
+                 matxs % get_xs('absorption', p_g, UVW=p_uvw)
+          else
+            score = score * &
+                 matxs % get_xs('fission', p_g, UVW=p_uvw) / &
+                 matxs % get_xs('absorption', p_g, UVW=p_uvw)
+          end if
         else
           if (i_nuclide > 0) then
             score = nucxs % get_xs('fission', p_g, UVW=p_uvw) * &
@@ -1404,6 +1417,14 @@ contains
 
 
       case (SCORE_NU_FISSION)
+
+        ! make sure the correct energy is used
+        if (t % estimator == ESTIMATOR_TRACKLENGTH) then
+          p_g = p % g
+        else
+          p_g = p % last_g
+        end if
+
         if (t % estimator == ESTIMATOR_ANALOG) then
           if (survival_biasing .or. p % fission) then
             if (t % find_filter(FILTER_ENERGYOUT) > 0) then
@@ -1412,7 +1433,7 @@ contains
               ! neutrons were emitted with different energies, multiple
               ! outgoing energy bins may have been scored to. The following
               ! logic treats this special case and results to multiple bins
-              call score_fission_eout(p, t, score_index, score_bin, .false.)
+              call score_fission_eout(p, t, score_index, score_bin)
               cycle SCORE_LOOP
             end if
           end if
@@ -1420,12 +1441,15 @@ contains
             ! No fission events occur if survival biasing is on -- need to
             ! calculate fraction of absorptions that would have resulted in
             ! nu-fission
-            if (nucxs % get_xs('absorption', p_g, UVW=p_uvw) > ZERO) then
-              score = p % absorb_wgt * flux * &
+            score = p % absorb_wgt * flux
+            if (i_nuclide > 0) then
+              score = score * atom_density * &
                    nucxs % get_xs('nu_fission', p_g, UVW=p_uvw) / &
-                   nucxs % get_xs('absorption', p_g, UVW=p_uvw)
+                   matxs % get_xs('absorption', p_g, UVW=p_uvw)
             else
-              score = ZERO
+              score = score * &
+                   matxs % get_xs('nu_fission', p_g, UVW=p_uvw) / &
+                   matxs % get_xs('absorption', p_g, UVW=p_uvw)
             end if
           else
             ! Skip any non-fission events
@@ -1436,6 +1460,11 @@ contains
             ! bank. Since this was weighted by 1/keff, we multiply by keff
             ! to get the proper score.
             score = keff * p % wgt_bank * flux
+            if (i_nuclide > 0) then
+              score = score * atom_density * &
+                   nucxs % get_xs('fission', p_g, UVW=p_uvw) / &
+                   matxs % get_xs('fission', p_g, UVW=p_uvw)
+            end if
           end if
 
         else
@@ -1449,6 +1478,14 @@ contains
 
 
       case (SCORE_PROMPT_NU_FISSION)
+
+        ! make sure the correct energy is used
+        if (t % estimator == ESTIMATOR_TRACKLENGTH) then
+          p_g = p % g
+        else
+          p_g = p % last_g
+        end if
+
         if (t % estimator == ESTIMATOR_ANALOG) then
           if (survival_biasing .or. p % fission) then
             if (t % find_filter(FILTER_ENERGYOUT) > 0) then
@@ -1457,7 +1494,7 @@ contains
               ! neutrons were emitted with different energies, multiple
               ! outgoing energy bins may have been scored to. The following
               ! logic treats this special case and results to multiple bins
-              call score_fission_eout(p, t, score_index, score_bin, .false.)
+              call score_fission_eout(p, t, score_index, score_bin)
               cycle SCORE_LOOP
             end if
           end if
@@ -1465,12 +1502,15 @@ contains
             ! No fission events occur if survival biasing is on -- need to
             ! calculate fraction of absorptions that would have resulted in
             ! nu-fission
-            if (nucxs % get_xs('absorption', p_g, UVW=p_uvw) > ZERO) then
-              score = p % absorb_wgt * flux * &
+            score = p % absorb_wgt * flux
+            if (i_nuclide > 0) then
+              score = score * atom_density * &
                    nucxs % get_xs('prompt_nu_fission', p_g, UVW=p_uvw) / &
-                   nucxs % get_xs('absorption', p_g, UVW=p_uvw)
+                   matxs % get_xs('absorption', p_g, UVW=p_uvw)
             else
-              score = ZERO
+              score = score * &
+                   matxs % get_xs('prompt_nu_fission', p_g, UVW=p_uvw) / &
+                   matxs % get_xs('absorption', p_g, UVW=p_uvw)
             end if
           else
             ! Skip any non-fission events
@@ -1482,17 +1522,14 @@ contains
             ! to get the proper score.
             score = keff * p % wgt_bank * (ONE - sum(p % n_delayed_bank) &
                  / real(p % n_bank, 8))
+            if (i_nuclide > 0) then
+              score = score * atom_density * &
+                   nucxs % get_xs('fission', p_g, UVW=p_uvw) / &
+                   matxs % get_xs('fission', p_g, UVW=p_uvw)
+            end if
           end if
 
         else
-
-          ! make sure the correct energy is used
-          if (t % estimator == ESTIMATOR_TRACKLENGTH) then
-            p_g = p % g
-          else
-            p_g = p % last_g
-          end if
-
           if (i_nuclide > 0) then
             score = nucxs % get_xs('prompt_nu_fission', p_g, UVW=p_uvw) * &
                  atom_density * flux
@@ -1522,7 +1559,7 @@ contains
               ! neutrons were emitted with different energies, multiple
               ! outgoing energy bins may have been scored to. The following
               ! logic treats this special case and results to multiple bins
-              call score_fission_eout(p, t, score_index, score_bin, .false.)
+              call score_fission_eout(p, t, score_index, score_bin)
               cycle SCORE_LOOP
             end if
           end if
@@ -1543,18 +1580,30 @@ contains
                     ! Get the delayed group for this bin
                     d = filt % groups(d_bin)
 
-                    score = p % absorb_wgt * &
-                         nucxs % get_xs('delayed_nu_fission', p_g, &
-                         UVW=p_uvw, dg=d) / &
-                         nucxs % get_xs('absorption', p_g, UVW=p_uvw)
+                    score = p % absorb_wgt * flux
+                    if (i_nuclide > 0) then
+                      score = score * nucxs % get_xs('delayed_nu_fission', &
+                           p_g, UVW=p_uvw, dg=d) / &
+                           nucxs % get_xs('absorption', p_g, UVW=p_uvw)
+                    else
+                      score = score * matxs % get_xs('delayed_nu_fission', &
+                           p_g, UVW=p_uvw, dg=d) / &
+                           matxs % get_xs('absorption', p_g, UVW=p_uvw)
+                    end if
+
                     call score_fission_delayed_dg(t, d_bin, score, score_index)
                   end do
                   cycle SCORE_LOOP
                 end select
               else
-                score = p % absorb_wgt * &
-                     matxs % get_xs('delayed_nu_fission', p_g, UVW=p_uvw) / &
-                     matxs % get_xs('absorption', p_g, UVW=p_uvw)
+                score = p % absorb_wgt * flux
+                if (i_nuclide > 0) then
+                  score = score * nucxs % get_xs('delayed_nu_fission', p_g, &
+                       UVW=p_uvw) / nucxs % get_xs('absorption', p_g, UVW=p_uvw)
+                else
+                  score = score * matxs % get_xs('delayed_nu_fission', p_g, &
+                       UVW=p_uvw) / matxs % get_xs('absorption', p_g, UVW=p_uvw)
+                end if
               end if
             end if
           else
@@ -1581,199 +1630,282 @@ contains
                   score = keff * p % wgt_bank / p % n_bank * &
                        p % n_delayed_bank(d)
 
+                  if (i_nuclide > 0) then
+                    score = score * atom_density * &
+                         nucxs % get_xs('fission', p_g, UVW=p_uvw) / &
+                         matxs % get_xs('fission', p_g, UVW=p_uvw)
+                  end if
+
                   call score_fission_delayed_dg(t, d_bin, score, score_index)
                 end do
                 cycle SCORE_LOOP
               end select
             else
               score = keff * p % wgt_bank / p % n_bank * sum(p % n_delayed_bank)
+              if (i_nuclide > 0) then
+                score = score * atom_density * &
+                     nucxs % get_xs('fission', p_g, UVW=p_uvw) / &
+                     matxs % get_xs('fission', p_g, UVW=p_uvw)
+              end if
             end if
           end if
         else
 
-          ! Check if tally is on a single nuclide
-          if (i_nuclide > 0) then
+          ! Check if the delayed group filter is present
+          if (dg_filter > 0) then
+            select type(filt => t % filters(dg_filter) % obj)
+            type is (DelayedGroupFilter)
 
-            ! Check if the delayed group filter is present
-            if (dg_filter > 0) then
-              select type(filt => t % filters(dg_filter) % obj)
-              type is (DelayedGroupFilter)
+              ! Loop over all delayed group bins and tally to them
+              ! individually
+              do d_bin = 1, filt % n_bins
 
-                ! Loop over all delayed group bins and tally to them
-                ! individually
-                do d_bin = 1, filt % n_bins
+                ! Get the delayed group for this bin
+                d = filt % groups(d_bin)
 
-                  ! Get the delayed group for this bin
-                  d = filt % groups(d_bin)
-
+                if (i_nuclide > 0) then
                   score = nucxs % get_xs('delayed_nu_fission', p_g, &
                        UVW=p_uvw, dg=d) * atom_density * flux
-
-                  call score_fission_delayed_dg(t, d_bin, score, score_index)
-                end do
-                cycle SCORE_LOOP
-              end select
-            else
-              score = nucxs % get_xs('delayed_nu_fission', p_g, UVW=p_uvw) &
-                   * atom_density * flux
-            end if
-          else
-
-            ! Check if the delayed group filter is present
-            if (dg_filter > 0) then
-              select type(filt => t % filters(dg_filter) % obj)
-              type is (DelayedGroupFilter)
-
-                ! Loop over all delayed group bins and tally to them
-                ! individually
-                do d_bin = 1, filt % n_bins
-
-                  ! Get the delayed group for this bin
-                  d = filt % groups(d_bin)
-
+                else
                   score = matxs % get_xs('delayed_nu_fission', p_g, &
                        UVW=p_uvw, dg=d) * flux
+                end if
 
-                  call score_fission_delayed_dg(t, d_bin, score, score_index)
-                end do
-                cycle SCORE_LOOP
-              end select
+                call score_fission_delayed_dg(t, d_bin, score, score_index)
+              end do
+              cycle SCORE_LOOP
+            end select
+          else
+            if (i_nuclide > 0) then
+              score = nucxs % get_xs('delayed_nu_fission', p_g, UVW=p_uvw) &
+                   * atom_density * flux
             else
-              score = matxs % get_xs('delayed_nu_fission', p_g, &
-                   UVW=p_uvw) * flux
+              score = matxs % get_xs('delayed_nu_fission', p_g, UVW=p_uvw) &
+                   * flux
             end if
           end if
         end if
 
-
       case (SCORE_DECAY_RATE)
+
+        ! make sure the correct energy is used
+        if (t % estimator == ESTIMATOR_TRACKLENGTH) then
+          p_g = p % g
+        else
+          p_g = p % last_g
+        end if
 
         ! Set the delayedgroup filter index and the number of delayed group bins
         dg_filter = t % find_filter(FILTER_DELAYEDGROUP)
 
-        if (survival_biasing) then
-          ! No fission events occur if survival biasing is on -- need to
-          ! calculate fraction of absorptions that would have resulted in
-          ! nu-fission
-          if (nucxs % get_xs('absorption', p_g, UVW=p_uvw) > ZERO) then
+        if (t % estimator == ESTIMATOR_ANALOG) then
+          if (survival_biasing) then
+            ! No fission events occur if survival biasing is on -- need to
+            ! calculate fraction of absorptions that would have resulted in
+            ! nu-fission
+            if (nucxs % get_xs('absorption', p_g, UVW=p_uvw) > ZERO) then
 
-            if (dg_filter > 0) then
-              select type(filt => t % filters(dg_filter) % obj)
-              type is (DelayedGroupFilter)
-
-                ! Loop over all delayed group bins and tally to them
-                ! individually
-                do d_bin = 1, filt % n_bins
-
-                  ! Get the delayed group for this bin
-                  d = filt % groups(d_bin)
-
-                  score = p % absorb_wgt * nucxs % get_xs('decay_rate', p_g, &
-                       UVW=p_uvw, dg=d) * &
-                       nucxs % get_xs('delayed_nu_fission', p_g, &
-                       UVW=p_uvw, dg=d) / &
-                       nucxs % get_xs('absorption', p_g, UVW=p_uvw)
-                  call score_fission_delayed_dg(t, d_bin, score, score_index)
-                end do
-                cycle SCORE_LOOP
-              end select
-            else
-
-              score = ZERO
-
-              ! If the delayed group filter is not present, compute the score
-              ! by accumulating the absorbed weight times the decay rate times
-              ! the fraction of the delayed-nu-fission xs to the absorption xs
-              ! for all delayed groups.
-              do d = 1, num_delayed_groups
-                score = score + p % absorb_wgt * &
-                     matxs % get_xs('decay_rate', p_g, UVW=p_uvw, dg=d) * &
-                     matxs % get_xs('delayed_nu_fission', p_g, UVW=p_uvw, &
-                     dg=d) / matxs % get_xs('absorption', p_g, UVW=p_uvw)
-              end do
-            end if
-          end if
-        else
-          ! Skip any non-fission events
-          if (.not. p % fission) cycle SCORE_LOOP
-          ! If there is no outgoing energy filter, than we only need to
-          ! score to one bin. For the score to be 'analog', we need to
-          ! score the number of particles that were banked in the fission
-          ! bank. Since this was weighted by 1/keff, we multiply by keff
-          ! to get the proper score.
-
-          ! loop over number of particles banked
-          do k = 1, p % n_bank
-
-            ! get the delayed group
-            g = fission_bank(n_bank - p % n_bank + k) % delayed_group
-
-            ! Case for tallying delayed emissions
-            if (g /= 0) then
-
-              ! determine score based on bank site weight and keff.
-              score = score + keff * fission_bank(n_bank - p % n_bank + k) &
-                   % wgt * matxs % get_xs('decay_rate', p_g, UVW=p_uvw, dg=d)
-
-              ! if the delayed group filter is present, tally to corresponding
-              ! delayed group bin if it exists
               if (dg_filter > 0) then
-
-                ! declare the delayed group filter type
                 select type(filt => t % filters(dg_filter) % obj)
                 type is (DelayedGroupFilter)
 
-                  ! loop over delayed group bins until the corresponding bin is
-                  ! found
+                  ! Loop over all delayed group bins and tally to them
+                  ! individually
                   do d_bin = 1, filt % n_bins
+
+                    ! Get the delayed group for this bin
                     d = filt % groups(d_bin)
 
-                    ! check whether the delayed group of the particle is equal to
-                    ! the delayed group of this bin
-                    if (d == g) then
-                      call score_fission_delayed_dg(t, d_bin, score, score_index)
+                    score = p % absorb_wgt * flux
+                    if (i_nuclide > 0) then
+                      score = score * nucxs % get_xs('decay_rate', p_g, &
+                           UVW=p_uvw, dg=d) * &
+                           nucxs % get_xs('delayed_nu_fission', p_g, &
+                           UVW=p_uvw, dg=d) / nucxs % get_xs('absorption', &
+                           p_g, UVW=p_uvw)
+                    else
+                      score = score * matxs % get_xs('decay_rate', p_g, &
+                           UVW=p_uvw, dg=d) * &
+                           matxs % get_xs('delayed_nu_fission', p_g, &
+                           UVW=p_uvw, dg=d) / matxs % get_xs('absorption', &
+                           p_g, UVW=p_uvw)
                     end if
-                  end do
-                end select
 
-                ! Reset the score to zero
+                    call score_fission_delayed_dg(t, d_bin, score, score_index)
+                  end do
+                  cycle SCORE_LOOP
+                end select
+              else
+
                 score = ZERO
+
+                ! If the delayed group filter is not present, compute the score
+                ! by accumulating the absorbed weight times the decay rate times
+                ! the fraction of the delayed-nu-fission xs to the absorption xs
+                ! for all delayed groups.
+                do d = 1, num_delayed_groups
+                  if (i_nuclide > 0) then
+                    score = score + p % absorb_wgt * &
+                         nucxs % get_xs('decay_rate', p_g, UVW=p_uvw, dg=d) * &
+                         nucxs % get_xs('delayed_nu_fission', p_g, UVW=p_uvw, &
+                         dg=d) / nucxs % get_xs('absorption', p_g, UVW=p_uvw)
+                  else
+                    score = score + p % absorb_wgt * &
+                         matxs % get_xs('decay_rate', p_g, UVW=p_uvw, dg=d) * &
+                         matxs % get_xs('delayed_nu_fission', p_g, UVW=p_uvw, &
+                         dg=d) / matxs % get_xs('absorption', p_g, UVW=p_uvw)
+                  end if
+                end do
               end if
             end if
-          end do
+          else
+            ! Skip any non-fission events
+            if (.not. p % fission) cycle SCORE_LOOP
+            ! If there is no outgoing energy filter, than we only need to
+            ! score to one bin. For the score to be 'analog', we need to
+            ! score the number of particles that were banked in the fission
+            ! bank. Since this was weighted by 1/keff, we multiply by keff
+            ! to get the proper score.
 
-          ! If the delayed group filter is present, cycle because the
-          ! score_fission_delayed_dg(...) has already tallied the score
+            score = ZERO
+
+            ! loop over number of particles banked
+            do k = 1, p % n_bank
+
+              ! get the delayed group
+              g = fission_bank(n_bank - p % n_bank + k) % delayed_group
+
+              ! Case for tallying delayed emissions
+              if (g /= 0) then
+
+                ! determine score based on bank site weight and keff.
+                if (i_nuclide > 0) then
+                  score = score + keff * atom_density * &
+                       fission_bank(n_bank - p % n_bank + k) % wgt * &
+                       nucxs % get_xs('decay_rate', p_g, UVW=p_uvw, dg=g) * &
+                       nucxs % get_xs('fission', p_g, UVW=p_uvw) / &
+                       matxs % get_xs('fission', p_g, UVW=p_uvw)
+                else
+                  score = score + keff * &
+                       fission_bank(n_bank - p % n_bank + k) % wgt * &
+                       matxs % get_xs('decay_rate', p_g, UVW=p_uvw, dg=g)
+                end if
+
+                ! if the delayed group filter is present, tally to corresponding
+                ! delayed group bin if it exists
+                if (dg_filter > 0) then
+
+                  ! declare the delayed group filter type
+                  select type(filt => t % filters(dg_filter) % obj)
+                  type is (DelayedGroupFilter)
+
+                    ! loop over delayed group bins until the corresponding bin
+                    ! is found
+                    do d_bin = 1, filt % n_bins
+                      d = filt % groups(d_bin)
+
+                      ! check whether the delayed group of the particle is equal
+                      ! to the delayed group of this bin
+                      if (d == g) then
+                        call score_fission_delayed_dg(t, d_bin, score, &
+                             score_index)
+                      end if
+                    end do
+                  end select
+
+                  ! Reset the score to zero
+                  score = ZERO
+                end if
+              end if
+            end do
+
+            ! If the delayed group filter is present, cycle because the
+            ! score_fission_delayed_dg(...) has already tallied the score
+            if (dg_filter > 0) then
+              cycle SCORE_LOOP
+            end if
+          end if
+        else
+
+          ! Check if the delayed group filter is present
           if (dg_filter > 0) then
-            cycle SCORE_LOOP
+            select type(filt => t % filters(dg_filter) % obj)
+            type is (DelayedGroupFilter)
+
+              ! Loop over all delayed group bins and tally to them
+              ! individually
+              do d_bin = 1, filt % n_bins
+
+                ! Get the delayed group for this bin
+                d = filt % groups(d_bin)
+
+                if (i_nuclide > 0) then
+                  score = nucxs % get_xs('decay_rate', p_g, UVW=p_uvw, dg=d) * &
+                       nucxs % get_xs('delayed_nu_fission', p_g, UVW=p_uvw, &
+                       dg=d) * atom_density * flux
+                else
+                  score = matxs % get_xs('decay_rate', p_g, UVW=p_uvw, dg=d) * &
+                       matxs % get_xs('delayed_nu_fission', p_g, UVW=p_uvw, &
+                       dg=d) * flux
+                end if
+
+                call score_fission_delayed_dg(t, d_bin, score, score_index)
+              end do
+              cycle SCORE_LOOP
+            end select
+          else
+            score = ZERO
+
+            ! If the delayed group filter is not present, compute the score
+            ! by accumulating the absorbed weight times the decay rate times
+            ! the fraction of the delayed-nu-fission xs to the absorption xs
+            ! for all delayed groups.
+            do d = 1, num_delayed_groups
+              if (i_nuclide > 0) then
+                score = score + atom_density * flux * &
+                     nucxs % get_xs('decay_rate', p_g, UVW=p_uvw, dg=d) * &
+                     nucxs % get_xs('delayed_nu_fission', p_g, UVW=p_uvw, dg=d)
+              else
+                score = score + atom_density * flux * &
+                     matxs % get_xs('decay_rate', p_g, UVW=p_uvw, dg=d) * &
+                     matxs % get_xs('delayed_nu_fission', p_g, UVW=p_uvw, dg=d)
+              end if
+            end do
           end if
         end if
 
-
       case (SCORE_KAPPA_FISSION)
+
+        ! make sure the correct energy is used
+        if (t % estimator == ESTIMATOR_TRACKLENGTH) then
+          p_g = p % g
+        else
+          p_g = p % last_g
+        end if
+
         if (t % estimator == ESTIMATOR_ANALOG) then
           if (survival_biasing) then
             ! No fission events occur if survival biasing is on -- need to
             ! calculate fraction of absorptions that would have resulted in
             ! fission
-            if (nucxs % get_xs('absorption', p_g, UVW=p_uvw) > ZERO) then
-              score = p % absorb_wgt * flux * &
-                   nucxs % get_xs('kappa_fission', p_g, UVW=p_uvw) / &
-                   nucxs % get_xs('absorption', p_g, UVW=p_uvw)
-            else
-              score = ZERO
-            end if
+            score = p % absorb_wgt * flux
           else
             ! Skip any non-absorption events
             if (p % event == EVENT_SCATTER) cycle SCORE_LOOP
             ! All fission events will contribute, so again we can use
             ! particle's weight entering the collision as the estimate for the
             ! fission reaction rate
-            score = p % last_wgt * flux * &
-                 nucxs % get_xs('kappa_fission', p_g, UVW=p_uvw) / &
-                 nucxs % get_xs('absorption', p_g, UVW=p_uvw)
+            score = p % last_wgt * flux
           end if
-
+          if (i_nuclide > 0) then
+            score = score * atom_density * &
+                 nucxs % get_xs('kappa_fission', p_g, UVW=p_uvw) / &
+                 matxs % get_xs('absorption', p_g, UVW=p_uvw)
+          else
+            score = score * &
+                 matxs % get_xs('kappa_fission', p_g, UVW=p_uvw) / &
+                 matxs % get_xs('absorption', p_g, UVW=p_uvw)
+          end if
         else
           if (i_nuclide > 0) then
             score = nucxs % get_xs('kappa_fission', p_g, UVW=p_uvw) * &
@@ -2234,13 +2366,12 @@ contains
 ! neutrons produced with different energies.
 !===============================================================================
 
-  subroutine score_fission_eout(p, t, i_score, score_bin, run_CE)
+  subroutine score_fission_eout(p, t, i_score, score_bin)
 
     type(Particle), intent(in)       :: p
     type(TallyObject), intent(inout) :: t
     integer, intent(in)              :: i_score ! index for score
     integer, intent(in)              :: score_bin
-    logical, intent(in)              :: run_CE
 
     integer :: i             ! index of outgoing energy filter
     integer :: j             ! index of delayedgroup filter

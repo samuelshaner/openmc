@@ -10,12 +10,22 @@
         <scores>flux fission nu-fission prompt-nu-fission delayed-nu-fission</scores>
     </tally>
     <tally id="2" name="tally 2">
-        <filter bins="1 2" type="delayedgroup" />
-        <filter bins="1" type="mesh" />
-        <scores>delayed-nu-fission</scores>
+      <filter bins="1 2" type="delayedgroup" />
+      <filter bins="1" type="mesh" />
+      <scores>delayed-nu-fission</scores>
     </tally>
+
     <tally id="3" name="tally 2">
-        <filter bins="1" type="mesh" />
-        <scores>decay-rate</scores>
+      <filter bins="1" type="mesh" />
+      <filter bins="1 2" type="delayedgroup" />
+      <scores>decay-rate</scores>
     </tally>
+
+    <tally id="4" name="tally 4">
+      <estimator>analog</estimator>
+      <filter bins="1" type="mesh" />
+      <scores>fission</scores>
+    </tally>
+
+
 </tallies>

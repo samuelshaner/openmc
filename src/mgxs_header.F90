@@ -75,7 +75,7 @@ module mgxs_header
       integer, optional, intent(in) :: gout   ! Outgoing group
       real(8), optional, intent(in) :: uvw(3) ! Requested angle
       real(8), optional, intent(in) :: mu     ! Change in angle
-      integer, optional, intent(in) :: dg     ! Delayed group
+      integer, optional, intent(in) :: dg      ! Delayed group
       real(8)                       :: xs     ! Resultant xs
     end function mgxs_get_xs_
 
@@ -104,15 +104,15 @@ module mgxs_header
       integer, intent(in)                  :: scatt_type    ! Legendre or Tabular Scatt?
     end subroutine mgxs_combine_
 
-    function mgxs_sample_fission_(this, gin, uvw, dg) result(gout)
+    subroutine mgxs_sample_fission_(this, gin, uvw, dg, gout)
       import Mgxs
       class(Mgxs), intent(in) :: this   ! Data to work with
       integer, intent(in)     :: gin    ! Incoming energy group
       real(8), intent(in)     :: uvw(3) ! Direction vector
-      integer, intent(inout)  :: dg     ! Delayed group
-      integer                 :: gout   ! Sampled outgoing group
+      integer, intent(out)    :: dg     ! Delayed group
+      integer, intent(out)    :: gout   ! Sampled outgoing group
 
-    end function mgxs_sample_fission_
+    end subroutine mgxs_sample_fission_
 
     subroutine mgxs_sample_scatter_(this, uvw, gin, gout, mu, wgt)
       import Mgxs
@@ -2482,12 +2482,12 @@ module mgxs_header
 ! MGXS*_SAMPLE_FISSION_ENERGY samples the outgoing energy from a fission event
 !===============================================================================
 
-    function mgxsiso_sample_fission_energy(this, gin, uvw, dg) result(gout)
+    subroutine mgxsiso_sample_fission_energy(this, gin, uvw, dg, gout)
       class(MgxsIso), intent(in)    :: this   ! Data to work with
       integer, intent(in)           :: gin    ! Incoming energy group
       real(8), intent(in)           :: uvw(3) ! Particle Direction
-      integer, intent(inout)        :: dg     ! Delayed group
-      integer                       :: gout   ! Sampled outgoing group
+      integer, intent(out)          :: dg     ! Delayed group
+      integer, intent(out)          :: gout   ! Sampled outgoing group
       real(8) :: xi_pd            ! Our random number for prompt/delayed
       real(8) :: xi_gout          ! Our random number for gout
       real(8) :: prob_pd          ! Running probability for prompt/delayed
@@ -2503,7 +2503,7 @@ module mgxs_header
       xi_gout = prn()
 
       ! Neutron is born prompt
-      if (xs_pd < nu_prompt / nu) then
+      if (xi_pd < nu_prompt / nu) then
 
         ! set the delayed group for the particle born from fission to 0
         dg = 0
@@ -2523,7 +2523,7 @@ module mgxs_header
         dg = 0
         prob_pd = nu_prompt / nu
 
-        do while (xi_pd < prob_pd)
+        do while (xi_pd >= prob_pd)
           dg = dg + 1
           prob_pd = prob_pd + this % get_xs('nu_delayed', gin, dg=dg) &
                / nu
@@ -2536,20 +2536,20 @@ module mgxs_header
         gout = 1
         prob_gout = this % chi_delayed(gout, gin)
 
-        do while (prob < xi_gout)
+        do while (prob_gout < xi_gout)
           gout = gout + 1
           prob_gout = prob_gout + this % chi_delayed(gout, gin)
         end do
       end if
 
-    end function mgxsiso_sample_fission_energy
+    end subroutine mgxsiso_sample_fission_energy
 
-    function mgxsang_sample_fission_energy(this, gin, uvw, dg) result(gout)
+    subroutine mgxsang_sample_fission_energy(this, gin, uvw, dg, gout)
       class(MgxsAngle), intent(in) :: this  ! Data to work with
       integer, intent(in)          :: gin    ! Incoming energy group
       real(8), intent(in)          :: uvw(3) ! Direction vector
-      integer, intent(inout)       :: dg     ! Delayed group
-      integer                      :: gout   ! Sampled outgoing group
+      integer, intent(out)         :: dg     ! Delayed group
+      integer, intent(out)         :: gout   ! Sampled outgoing group
       real(8) :: xi_pd            ! Our random number for prompt/delayed
       real(8) :: xi_gout          ! Our random number for gout
       real(8) :: prob_pd          ! Running probability for prompt/delayed
@@ -2568,7 +2568,7 @@ module mgxs_header
       xi_gout = prn()
 
       ! Neutron is born prompt
-      if (xs_pd < nu_prompt / nu) then
+      if (xi_pd < nu_prompt / nu) then
 
         ! set the delayed group for the particle born from fission to 0
         dg = 0
@@ -2608,7 +2608,7 @@ module mgxs_header
         end do
       end if
 
-    end function mgxsang_sample_fission_energy
+    end subroutine mgxsang_sample_fission_energy
 
 !===============================================================================
 ! MGXS*_SAMPLE_SCATTER Selects outgoing energy and angle after a scatter event

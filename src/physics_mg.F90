@@ -173,6 +173,8 @@ contains
 
     integer :: nu_d(MAX_DELAYED_GROUPS) ! number of delayed neutrons born
     integer :: i                        ! loop index
+    integer :: dg                       ! delayed group
+    integer :: gout                     ! group out
     integer :: nu                       ! actual number of neutrons produced
     integer :: ijk(3)                   ! indices in ufs mesh
     real(8) :: nu_t                     ! total nu
@@ -260,12 +262,12 @@ contains
 
       ! Sample secondary energy distribution for fission reaction and set energy
       ! in fission bank
-      bank_array(i) % E = &
-           real(xs % sample_fission_energy(p % g, &
-           bank_array(i) % uvw, bank_array(i) % delayed_group), 8)
+      call xs % sample_fission_energy(p % g, bank_array(i) % uvw, dg, gout)
+      bank_array(i) % E = real(gout, 8)
+      bank_array(i) % delayed_group = dg
 
       ! Set delayed group on particle too
-      p % delayed_group = bank_array(i) % delayed_group
+      p % delayed_group = dg
 
       ! Increment the number of neutrons born delayed
       if (p % delayed_group > 0) then

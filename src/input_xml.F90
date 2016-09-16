@@ -3537,16 +3537,24 @@ contains
             end if
           case ('decay-rate')
             t % score_bins(j) = SCORE_DECAY_RATE
-            t % estimator = ESTIMATOR_ANALOG
+
+            ! Set tally estimator to analog for CE mode
+            ! (MG mode has all data available without a collision being
+            ! necessary)
+            if (run_CE) then
+              t % estimator = ESTIMATOR_ANALOG
+            end if
           case ('delayed-nu-fission')
             t % score_bins(j) = SCORE_DELAYED_NU_FISSION
             if (t % find_filter(FILTER_ENERGYOUT) > 0) then
+
               ! Set tally estimator to analog
               t % estimator = ESTIMATOR_ANALOG
             end if
           case ('prompt-nu-fission')
             t % score_bins(j) = SCORE_PROMPT_NU_FISSION
             if (t % find_filter(FILTER_ENERGYOUT) > 0) then
+
               ! Set tally estimator to analog
               t % estimator = ESTIMATOR_ANALOG
             end if
