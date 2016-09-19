@@ -1567,7 +1567,7 @@ contains
             ! No fission events occur if survival biasing is on -- need to
             ! calculate fraction of absorptions that would have resulted in
             ! nu-fission
-            if (nucxs % get_xs('absorption', p_g, UVW=p_uvw) > ZERO) then
+            if (matxs % get_xs('absorption', p_g, UVW=p_uvw) > ZERO) then
 
               if (dg_filter > 0) then
                 select type(filt => t % filters(dg_filter) % obj)
@@ -1703,7 +1703,7 @@ contains
             ! No fission events occur if survival biasing is on -- need to
             ! calculate fraction of absorptions that would have resulted in
             ! nu-fission
-            if (nucxs % get_xs('absorption', p_g, UVW=p_uvw) > ZERO) then
+            if (matxs % get_xs('absorption', p_g, UVW=p_uvw) > ZERO) then
 
               if (dg_filter > 0) then
                 select type(filt => t % filters(dg_filter) % obj)
@@ -1866,7 +1866,7 @@ contains
                      nucxs % get_xs('decay_rate', p_g, UVW=p_uvw, dg=d) * &
                      nucxs % get_xs('delayed_nu_fission', p_g, UVW=p_uvw, dg=d)
               else
-                score = score + atom_density * flux * &
+                score = score + flux * &
                      matxs % get_xs('decay_rate', p_g, UVW=p_uvw, dg=d) * &
                      matxs % get_xs('delayed_nu_fission', p_g, UVW=p_uvw, dg=d)
               end if

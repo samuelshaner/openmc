@@ -150,7 +150,7 @@ module mgxs_header
     real(8), allocatable :: fission(:)              ! Neutron production
     real(8), allocatable :: decay_rate(:)           ! Delayed neutron precursor decay rate
     real(8), allocatable :: velocity(:)             ! Neutron velocity
-    real(8), allocatable :: chi_delayed(:, :)       ! Delayed fission spectra
+    real(8), allocatable :: chi_delayed(:, :, :)    ! Delayed fission spectra
     real(8), allocatable :: chi_prompt(:, :)        ! Prompt fission spectra
 
   contains
@@ -179,7 +179,7 @@ module mgxs_header
     real(8), allocatable :: fission(:, :, :)               ! Neutron production
     real(8), allocatable :: decay_rate(:, :, :)            ! Delayed neutron precursor decay rate
     real(8), allocatable :: velocity(:, :, :)              ! Neutron velocity
-    real(8), allocatable :: chi_delayed(:, :, :, :)        ! Delayed fission spectra
+    real(8), allocatable :: chi_delayed(:, :, :, :, :)     ! Delayed fission spectra
     real(8), allocatable :: chi_prompt(:, :, :, :)         ! Prompt fission spectra
 
     ! In all cases, right-most indices are theta, phi
@@ -296,7 +296,7 @@ module mgxs_header
       allocate(this % kappa_fission(energy_groups))
       allocate(this % decay_rate(delayed_groups))
       allocate(this % velocity(energy_groups))
-      allocate(this % chi_delayed(energy_groups, energy_groups))
+      allocate(this % chi_delayed(energy_groups, energy_groups, delayed_groups))
       allocate(this % chi_prompt(energy_groups, energy_groups))
 
       if (this % fissionable) then
@@ -310,8 +310,12 @@ module mgxs_header
         !   a) If beta present, prompt_nu_fission = (1 - beta) * nu_fission
         !      and delayed_nu_fission_dg = beta_dg * nu_fission
         !   b) Else, prompt_nu_fission = nu_fission and delayed_nu_fission = 0
-        ! 3) chi_prompt (v), chi_delayed (v), prompt_nu_fission (v)
-        !    and delayed_nu_fission (v) provided
+        ! 3) chi_prompt (v), chi_delayed (m), nu_fission (v) provided
+        !   a) If beta present, prompt_nu_fission = (1 - beta) * nu_fission
+        !      and delayed_nu_fission_dg = beta_dg * nu_fission
+        !   b) Else, prompt_nu_fission = nu_fission and delayed_nu_fission = 0
+        ! 4) chi_prompt (v), chi_delayed (m), prompt_nu_fission (v) and
+        !    delayed_nu_fission (v) provided
         !
         ! Based on which option the user has chosen, the chi_prompt,
         ! chi_delayed, prompt_nu_fission, and delayed_nu_fission xs
@@ -347,7 +351,9 @@ module mgxs_header
           end do
 
           ! Set chi_delayed to chi_prompt
-          this % chi_delayed = this % chi_prompt
+          do dg = 1, delayed_groups
+            this % chi_delayed(:, :, dg) = this % chi_prompt(:, :)
+          end do
 
           ! Deallocate temporary chi array
           deallocate(temp_arr)
@@ -388,7 +394,9 @@ module mgxs_header
           ! --------------------------------------------------------------------
           ! 2) nu_fission (m) provided
           ! --------------------------------------------------------------------
-        else if (check_for_node(node_xsdata, "nu_fission")) then
+        else if (check_for_node(node_xsdata, "nu_fission") .and. .not. &
+             (check_for_node(node_xsdata, "chi_prompt") .or. &
+             check_for_node(node_xsdata, "chi_delayed"))) then
 
           ! Allocate temporary array for beta
           allocate(temp_beta(delayed_groups))
@@ -448,10 +456,120 @@ module mgxs_header
           end do
 
           ! Set chi_delayed to chi_prompt
-          this % chi_delayed = this % chi_prompt
+          do dg = 1, delayed_groups
+            this % chi_delayed(:, :, dg) = this % chi_prompt(:, :)
+          end do
 
           ! --------------------------------------------------------------------
-          ! 3) chi_prompt (v), chi_delayed (v), prompt_nu_fission (v)
+          ! 3) chi_prompt (v), chi_delayed (m), nu_fission (v) provided
+          ! --------------------------------------------------------------------
+        else if (.not. check_for_node(node_xsdata, "delayed_nu_fission")) then
+
+          ! Allocate temporary array for beta
+          allocate(temp_beta(delayed_groups))
+
+          ! Set beta
+          if (check_for_node(node_xsdata, "beta")) then
+            call get_node_array(node_xsdata, "beta", temp_beta)
+          else
+            temp_beta = ZERO
+          end if
+
+          ! Set chi_prompt
+          if (check_for_node(node_xsdata, "chi_prompt")) then
+
+            ! Allocate temporary array for chi_prompt
+            allocate(temp_arr(energy_groups))
+
+            ! Get array with chi_prompt
+            call get_node_array(node_xsdata, "chi_prompt", temp_arr)
+
+            do gin = 1, energy_groups
+              do gout = 1, energy_groups
+                this % chi_prompt(gout, gin) = temp_arr(gout)
+              end do
+
+              ! Normalize chi so its CDF goes to 1
+              this % chi_prompt(:, gin) = this % chi_prompt(:, gin) / &
+                   sum(this % chi_prompt(:, gin))
+            end do
+
+            ! Deallocate temporary array for chi_prompt
+            deallocate(temp_arr)
+
+          else
+            call fatal_error("If chi and nu_fission not provided, chi_prompt &
+                 &must be provided")
+          end if
+
+          ! Set chi_delayed
+          if (check_for_node(node_xsdata, "chi_delayed")) then
+
+            ! Allocate temporary array for chi_delayed
+            allocate(temp_arr(energy_groups * delayed_groups))
+
+            ! Get array with chi_delayed
+            call get_node_array(node_xsdata, "chi_delayed", temp_arr)
+            allocate(temp_2d(energy_groups, energy_groups))
+            temp_2d = reshape(temp_arr, (/energy_groups, delayed_groups/))
+
+            do dg = 1, delayed_groups
+              do gin = 1, energy_groups
+                do gout = 1, energy_groups
+                  this % chi_delayed(gout, gin, dg) = temp_2d(gout, dg)
+                end do
+
+                ! Normalize chi so its CDF goes to 1
+                this % chi_delayed(:, gin, dg) = &
+                     this % chi_delayed(:, gin, dg) / &
+                     sum(this % chi_delayed(:, gin, dg))
+              end do
+            end do
+
+            ! Deallocate temporary arrays for chi_delayed
+            deallocate(temp_arr)
+            deallocate(temp_2d)
+
+          else
+            call fatal_error("If chi and nu_fision not provided, chi_delayed &
+                 &must be provided")
+          end if
+
+          ! Set prompt_nu_fission and delayed_nu_fission using
+          ! nu_fission (v) and beta
+          if (check_for_node(node_xsdata, "nu_fission")) then
+
+            ! Get nu_fission
+            call get_node_array(node_xsdata, "nu_fission", &
+                 this % prompt_nu_fission)
+
+            ! ------------------------------------------------------------------
+            ! a) If beta present, prompt_nu_fission = (1 - beta) * nu_fission
+            !    and delayed_nu_fission_dg = beta_dg * nu_fission
+            ! b) Else, prompt_nu_fission = nu_fission and delayed_nu_fission = 0
+            ! ------------------------------------------------------------------
+            do gin = 1, energy_groups
+              do dg = 1, delayed_groups
+
+                ! Set delayed_nu_fission using delayed neutron fraction
+                this % delayed_nu_fission(gin, dg) = temp_beta(dg) * &
+                     this % prompt_nu_fission(gin)
+              end do
+
+              ! Correct prompt_nu_fission using delayed neutron fraction
+              this % prompt_nu_fission(gin) = (1 - sum(temp_beta)) * &
+                   this % prompt_nu_fission(gin)
+            end do
+
+          else
+            call fatal_error("If chi provided, nu_fission must be provided")
+          end if
+
+          ! Deallocate temporary beta array
+          deallocate(temp_beta)
+
+          ! --------------------------------------------------------------------
+          ! 4) chi_prompt (v), chi_delayed (m), prompt_nu_fission (v)
           !    and delayed_nu_fission (v) provided
           ! --------------------------------------------------------------------
         else
@@ -495,23 +613,31 @@ module mgxs_header
           if (check_for_node(node_xsdata, "chi_delayed")) then
 
             ! Allocate temporary array for chi_delayed
-            allocate(temp_arr(energy_groups))
+            allocate(temp_arr(energy_groups * delayed_groups))
 
             ! Get array with chi_delayed
             call get_node_array(node_xsdata, "chi_delayed", temp_arr)
+            allocate(temp_2d(energy_groups, energy_groups))
+            temp_2d = reshape(temp_arr, (/energy_groups, delayed_groups/))
 
             do gin = 1, energy_groups
               do gout = 1, energy_groups
-                this % chi_delayed(gout, gin) = temp_arr(gout)
+                do dg = 1, delayed_groups
+                  this % chi_delayed(gout, gin, dg) = temp_2d(gout, dg)
+                end do
               end do
 
               ! Normalize chi so its CDF goes to 1
-              this % chi_delayed(:, gin) = this % chi_delayed(:, gin) / &
-                   sum(this % chi_delayed(:, gin))
+              do dg = 1, delayed_groups
+                this % chi_delayed(:, gin, dg) = &
+                     this % chi_delayed(:, gin, dg) / &
+                     sum(this % chi_delayed(:, gin, dg))
+              end do
             end do
 
-            ! Deallocate temporary array for chi_delayed
+            ! Deallocate temporary arrays for chi_delayed
             deallocate(temp_arr)
+            deallocate(temp_2d)
 
           else
             call fatal_error("If chi and nu_fision not provided, chi_delayed &
@@ -895,7 +1021,7 @@ module mgxs_header
       allocate(this % chi_prompt(energy_groups, energy_groups, this % n_azi, &
            this % n_pol))
       allocate(this % chi_delayed(energy_groups, energy_groups, this % n_azi, &
-           this % n_pol))
+           this % n_pol, delayed_groups))
       allocate(this % total(energy_groups, this % n_azi, this % n_pol))
       allocate(this % absorption(energy_groups, this % n_azi, this % n_pol))
       allocate(this % fission(energy_groups, this % n_azi, this % n_pol))
@@ -914,7 +1040,11 @@ module mgxs_header
         !   a) If beta present, prompt_nu_fission = (1 - beta) * nu_fission
         !      and delayed_nu_fission_dg = beta_dg * nu_fission
         !   b) Else, prompt_nu_fission = nu_fission and delayed_nu_fission = 0
-        ! 3) chi_prompt (v), chi_delayed (v), prompt_nu_fission (v)
+        ! 3) chi_prompt (v), chi_delayed (m), nu_fission (v) provided
+        !   a) If beta present, prompt_nu_fission = (1 - beta) * nu_fission
+        !      and delayed_nu_fission_dg = beta_dg * nu_fission
+        !   b) Else, prompt_nu_fission = nu_fission and delayed_nu_fission = 0
+        ! 4) chi_prompt (v), chi_delayed (m), prompt_nu_fission (v)
         !    and delayed_nu_fission (v) provided
         !
         ! Based on which option the user has chosen, the chi_prompt,
@@ -973,7 +1103,9 @@ module mgxs_header
           end do
 
           ! Set chi_delayed to chi_prompt
-          this % chi_delayed = this % chi_prompt
+          do dg = 1, delayed_groups
+            this % chi_delayed(:, :, :, :, dg) = this % chi_prompt(:, :, :, :)
+          end do
 
           ! Deallocate temporary chi array
           deallocate(temp_arr)
@@ -985,7 +1117,7 @@ module mgxs_header
             allocate(temp_arr(energy_groups * this % n_azi * this % n_pol))
 
             ! Get nu_fission
-            call get_node_array(node_xsdata, "prompt_nu_fission", temp_arr)
+            call get_node_array(node_xsdata, "nu_fission", temp_arr)
             this % prompt_nu_fission(:, :, :) = reshape(temp_arr, &
                  (/energy_groups, this % n_azi, this % n_pol/))
 
@@ -1082,7 +1214,9 @@ module mgxs_header
           end do
 
           ! Set chi_delayed to chi_prompt
-          this % chi_delayed = this % chi_prompt
+          do dg = 1, delayed_groups
+            this % chi_delayed(:, :, :, :, dg) = this % chi_prompt(:, :, :, :)
+          end do
 
           ! Deallocate temporary chi array
           deallocate(temp_4d)
@@ -1116,7 +1250,165 @@ module mgxs_header
           deallocate(temp_beta_3d)
 
           ! --------------------------------------------------------------------
-          ! 3) chi_prompt (v), chi_delayed (v), prompt_nu_fission (v)
+          ! 3) chi_prompt (v), chi_delayed (m), nu_fission (v) provided
+          ! --------------------------------------------------------------------
+        else if (.not. check_for_node(node_xsdata, "delayed_nu_fission")) then
+
+          ! Allocate temporary arrays for beta
+          allocate(temp_beta(this % n_azi * this % n_pol * delayed_groups))
+          allocate(temp_beta_3d(this % n_azi, this % n_pol, delayed_groups))
+
+          ! Set beta
+          if (check_for_node(node_xsdata, "beta")) then
+            call get_node_array(node_xsdata, "beta", temp_beta)
+          else
+            temp_beta = ZERO
+          end if
+
+          ! Reshape beta array
+          temp_beta_3d(:, :, :) = reshape(temp_beta, &
+               (/this % n_azi, this % n_pol, delayed_groups/))
+
+          ! Set chi_prompt
+          if (check_for_node(node_xsdata, "chi_prompt")) then
+
+            ! Allocate temporary array for chi_prompt
+            allocate(temp_arr(1 * energy_groups * this % n_azi * this % n_pol))
+
+            ! Get array for chi_prompt
+            call get_node_array(node_xsdata, "chi_prompt", temp_arr)
+
+            ! Initialize counter for temp_arr
+            l = 0
+            gin = 1
+            do ipol = 1, this % n_pol
+              do iazi = 1, this % n_azi
+                do gout = 1, energy_groups
+                  l = l + 1
+                  this % chi_prompt(gout, gin, iazi, ipol) = temp_arr(l)
+                end do
+
+                ! Normalize chi so its CDF goes to 1
+                this % chi_prompt(:, gin, iazi, ipol) = &
+                     this % chi_prompt(:, gin, iazi, ipol) / &
+                     sum(this % chi_prompt(:, gin, iazi, ipol))
+              end do
+            end do
+
+            ! Now set all the other gin values
+            do ipol = 1, this % n_pol
+              do iazi = 1, this % n_azi
+                do gin = 2, energy_groups
+                  this % chi_prompt(:, gin, iazi, ipol) = &
+                       this % chi_prompt(:, 1, iazi, ipol)
+                end do
+              end do
+            end do
+
+            ! Dellocate temporary array for chi_prompt
+            deallocate(temp_arr)
+
+          else
+            call fatal_error("If chi and nu_fission not provided, chi_prompt &
+                 &must be provided")
+          end if
+
+          ! Set chi_delayed
+          if (check_for_node(node_xsdata, "chi_delayed")) then
+
+            ! Allocate temporary array for chi_delayed
+            allocate(temp_arr(1 * energy_groups * &
+                 this % n_azi * this % n_pol * delayed_groups))
+
+            ! Get array with chi_delayed
+            call get_node_array(node_xsdata, "chi_delayed", temp_arr)
+
+            ! Initialize counter for temp_arr
+            l = 0
+            gin = 1
+            do ipol = 1, this % n_pol
+              do iazi = 1, this % n_azi
+                do gout = 1, energy_groups
+                  do dg = 1, delayed_groups
+                    l = l + 1
+                    this % chi_delayed(gout, gin, iazi, ipol, dg) = temp_arr(l)
+                  end do
+                end do
+
+                ! Normalize chi so its CDF goes to 1
+                this % chi_delayed(:, gin, iazi, ipol, dg) = &
+                     this % chi_delayed(:, gin, iazi, ipol, dg) / &
+                     sum(this % chi_delayed(:, gin, iazi, ipol, dg))
+              end do
+            end do
+
+            ! Now set all the other gin values
+            do dg = 1, delayed_groups
+              do ipol = 1, this % n_pol
+                do iazi = 1, this % n_azi
+                  do gin = 2, energy_groups
+                    this % chi_delayed(:, gin, iazi, ipol, dg) = &
+                         this % chi_delayed(:, 1, iazi, ipol, dg)
+                  end do
+                end do
+              end do
+            end do
+
+            ! Deallocate temporary array for chi_delayed
+            deallocate(temp_arr)
+
+          else
+            call fatal_error("If chi and nu_fission not provided, chi_delayed &
+                 &must be provided")
+          end if
+
+          ! Get nu_fission (as a vector)
+          if (check_for_node(node_xsdata, "nu_fission")) then
+
+            ! Allocate temporary array for nu_fission
+            allocate(temp_arr(energy_groups * this % n_azi * this % n_pol))
+
+            ! Get nu_fission
+            call get_node_array(node_xsdata, "nu_fission", temp_arr)
+            this % prompt_nu_fission(:, :, :) = reshape(temp_arr, &
+                 (/energy_groups, this % n_azi, this % n_pol/))
+
+            ! Deallocate temporary array for nu_fission
+            deallocate(temp_arr)
+
+            ! ------------------------------------------------------------------
+            ! a) If beta present, prompt_nu_fission = (1 - beta) * nu_fission
+            !    and delayed_nu_fission_dg = beta_dg * nu_fission
+            ! b) Else, prompt_nu_fission = nu_fission and delayed_nu_fission = 0
+            ! ------------------------------------------------------------------
+            do gin = 1, energy_groups
+              do ipol = 1, this % n_pol
+                do iazi = 1, this % n_azi
+                  do dg = 1, delayed_groups
+
+                    ! Set delayed_nu_fission using delayed neutron fraction
+                    this % delayed_nu_fission(gin, iazi, ipol, dg) = &
+                         temp_beta_3d(iazi, ipol, dg) * &
+                         this % prompt_nu_fission(gin, iazi, ipol)
+                  end do
+
+                  ! Correct prompt_nu_fission using delayed neutron fraction
+                  this % prompt_nu_fission(gin, iazi, ipol) = &
+                       (1 - sum(temp_beta_3d(iazi, ipol, :))) * &
+                       this % prompt_nu_fission(gin, iazi, ipol)
+                end do
+              end do
+            end do
+          else
+            call fatal_error("If chi provided, nu_fission must be provided")
+          end if
+
+          ! Deallocate temporary beta arrays
+          deallocate(temp_beta)
+          deallocate(temp_beta_3d)
+
+          ! --------------------------------------------------------------------
+          ! 4) chi_prompt (v), chi_delayed (m), prompt_nu_fission (v)
           !    and delayed_nu_fission (v) provided
           ! --------------------------------------------------------------------
         else
@@ -1189,7 +1481,7 @@ module mgxs_header
 
             ! Allocate temporary array for chi_delayed
             allocate(temp_arr(1 * energy_groups * &
-                 this % n_azi * this % n_pol))
+                 this % n_azi * this % n_pol * delayed_groups))
 
             ! Get array with chi_delayed
             call get_node_array(node_xsdata, "chi_delayed", temp_arr)
@@ -1200,23 +1492,27 @@ module mgxs_header
             do ipol = 1, this % n_pol
               do iazi = 1, this % n_azi
                 do gout = 1, energy_groups
-                  l = l + 1
-                  this % chi_delayed(gout, gin, iazi, ipol) = temp_arr(l)
+                  do dg = 1, delayed_groups
+                    l = l + 1
+                    this % chi_delayed(gout, gin, iazi, ipol, dg) = temp_arr(l)
+                  end do
                 end do
 
                 ! Normalize chi so its CDF goes to 1
-                this % chi_delayed(:, gin, iazi, ipol) = &
-                     this % chi_delayed(:, gin, iazi, ipol) / &
-                     sum(this % chi_delayed(:, gin, iazi, ipol))
+                this % chi_delayed(:, gin, iazi, ipol, dg) = &
+                     this % chi_delayed(:, gin, iazi, ipol, dg) / &
+                     sum(this % chi_delayed(:, gin, iazi, ipol, dg))
               end do
             end do
 
             ! Now set all the other gin values
-            do ipol = 1, this % n_pol
-              do iazi = 1, this % n_azi
-                do gin = 2, energy_groups
-                  this % chi_delayed(:, gin, iazi, ipol) = &
-                       this % chi_delayed(:, 1, iazi, ipol)
+            do dg = 1, delayed_groups
+              do ipol = 1, this % n_pol
+                do iazi = 1, this % n_azi
+                  do gin = 2, energy_groups
+                    this % chi_delayed(:, gin, iazi, ipol, dg) = &
+                         this % chi_delayed(:, 1, iazi, ipol, dg)
+                  end do
                 end do
               end do
             end do
@@ -1311,7 +1607,7 @@ module mgxs_header
       else
         this % delayed_nu_fission(:, :, :, :) = ZERO
         this % prompt_nu_fission(:, :, :)     = ZERO
-        this % chi_delayed(:, :, :, :)        = ZERO
+        this % chi_delayed(:, :, :, :, :)     = ZERO
         this % chi_prompt(:, :, :, :)         = ZERO
         this % fission(:, :, :)               = ZERO
         this % kappa_fission(:, :, :)         = ZERO
@@ -1674,10 +1970,17 @@ module mgxs_header
 
       case('chi_delayed')
         if (present(gout)) then
-          xs = this % chi_delayed(gout,gin)
+          if (present(dg)) then
+            xs = this % chi_delayed(gout, gin, dg)
+          else
+            xs = this % chi_delayed(gout, gin, 1)
+          end if
         else
-          ! Not sure youd want a 1 or a 0, but here you go!
-          xs = sum(this % chi_delayed(:, gin))
+          if (present(dg)) then
+            xs = sum(this % chi_delayed(:, gin, dg))
+          else
+            xs = sum(this % chi_delayed(:, gin, 1))
+          end if
         end if
 
       case('scatter')
@@ -1821,10 +2124,17 @@ module mgxs_header
 
         case('chi_delayed')
           if (present(gout)) then
-            xs = this % chi_delayed(gout, gin, iazi, ipol)
+            if (present(dg)) then
+              xs = this % chi_delayed(gout, gin, iazi, ipol, dg)
+            else
+              xs = this % chi_delayed(gout, gin, iazi, ipol, 1)
+            end if
           else
-            ! Not sure you would want a 1 or a 0, but here you go!
-            xs = sum(this % chi_delayed(:, gin, iazi, ipol))
+            if (present(dg)) then
+              xs = sum(this % chi_delayed(:, gin, iazi, ipol, dg))
+            else
+              xs = sum(this % chi_delayed(:, gin, iazi, ipol, 1))
+            end if
           end if
 
         case('decay_rate')
@@ -2032,8 +2342,8 @@ module mgxs_header
       allocate(this % chi_prompt(energy_groups, energy_groups))
       this % chi_prompt(:, :) = ZERO
 
-      allocate(this % chi_delayed(energy_groups, energy_groups))
-      this % chi_delayed(:, :) = ZERO
+      allocate(this % chi_delayed(energy_groups, energy_groups, delayed_groups))
+      this % chi_delayed(:, :, :) = ZERO
 
       allocate(this % velocity(energy_groups))
       this % velocity(:) = ZERO
@@ -2077,8 +2387,8 @@ module mgxs_header
             this % chi_prompt(:, :) = this % chi_prompt(:, :) + &
                  atom_density * nuc % chi_prompt(:, :)
 
-            this % chi_delayed(:, :) = this % chi_delayed(:, :) + &
-                 atom_density * nuc % chi_delayed(:, :)
+            this % chi_delayed(:, :, :) = this % chi_delayed(:, :, :) + &
+                 atom_density * nuc % chi_delayed(:, :, :)
 
             this % prompt_nu_fission(:) = this % prompt_nu_fission(:)+ &
                  atom_density * nuc % prompt_nu_fission(:)
@@ -2166,6 +2476,7 @@ module mgxs_header
 
       integer :: i             ! loop index over nuclides
       integer :: gin, gout     ! group indices
+      integer :: dg            ! delayed group indices
       real(8) :: atom_density  ! atom density of a nuclide
       integer :: ipol, iazi, n_pol, n_azi
       real(8) :: norm, nuscatt
@@ -2306,8 +2617,9 @@ module mgxs_header
       allocate(this % chi_prompt(energy_groups, energy_groups, n_azi, n_pol))
       this % chi_prompt(:, :, :, :) = ZERO
 
-      allocate(this % chi_delayed(energy_groups, energy_groups, n_azi, n_pol))
-      this % chi_delayed(:, :, :, :) = ZERO
+      allocate(this % chi_delayed(energy_groups, energy_groups, n_azi, n_pol, &
+           delayed_groups))
+      this % chi_delayed(:, :, :, :, :) = ZERO
 
       allocate(temp_mult(energy_groups, energy_groups, n_azi, n_pol))
       temp_mult(:, :, :, :) = ZERO
@@ -2460,14 +2772,16 @@ module mgxs_header
           end do
         end do
 
-        do ipol = 1, n_pol
-          do iazi = 1, n_azi
-            do gin = 1, energy_groups
-              norm =  sum(this % chi_delayed(:, gin, iazi, ipol))
-              if (norm > ZERO) then
-                this % chi_delayed(:, gin, iazi, ipol) = &
-                     this % chi_delayed(:, gin, iazi, ipol) / norm
-              end if
+        do dg = 1, delayed_groups
+          do ipol = 1, n_pol
+            do iazi = 1, n_azi
+              do gin = 1, energy_groups
+                norm =  sum(this % chi_delayed(:, gin, iazi, ipol, dg))
+                if (norm > ZERO) then
+                  this % chi_delayed(:, gin, iazi, ipol, dg) = &
+                       this % chi_delayed(:, gin, iazi, ipol, dg) / norm
+                end if
+              end do
             end do
           end do
         end do
@@ -2534,11 +2848,11 @@ module mgxs_header
 
         ! Get the outgoing group
         gout = 1
-        prob_gout = this % chi_delayed(gout, gin)
+        prob_gout = this % chi_delayed(gout, gin, dg)
 
         do while (prob_gout < xi_gout)
           gout = gout + 1
-          prob_gout = prob_gout + this % chi_delayed(gout, gin)
+          prob_gout = prob_gout + this % chi_delayed(gout, gin, dg)
         end do
       end if
 
@@ -2600,11 +2914,11 @@ module mgxs_header
 
         ! Get the outgoing group
         gout = 1
-        prob_gout = this % chi_delayed(gout, gin, iazi, ipol)
+        prob_gout = this % chi_delayed(gout, gin, iazi, ipol, dg)
 
         do while (prob < xi_gout)
           gout = gout + 1
-          prob_gout = prob_gout + this % chi_delayed(gout, gin, iazi, ipol)
+          prob_gout = prob_gout + this % chi_delayed(gout, gin, iazi, ipol, dg)
         end do
       end if
 
