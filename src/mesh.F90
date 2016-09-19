@@ -44,7 +44,7 @@ contains
     end do
 
     ! Determine indices
-    call get_mesh_indices(m, xyz(1:n), ijk(1:n), in_mesh)
+    call get_mesh_indices(m, xyz, ijk, in_mesh)
 
     ! Convert indices to bin
     if (in_mesh) then
@@ -66,7 +66,7 @@ contains
     logical, intent(out)          :: in_mesh ! were given coords in mesh?
 
     ! Find particle in mesh
-    ijk = ceiling((xyz(:m % n_dimension) - m % lower_left)/m % width)
+    ijk(:m % n_dimension) = ceiling((xyz(:m % n_dimension) - m % lower_left)/m % width)
 
     ! Determine if particle is in mesh
     if (any(ijk(:m % n_dimension) < 1) .or. &
@@ -240,7 +240,6 @@ contains
 
     real(8) :: x0   ! track start point
     real(8) :: x1   ! track end point
-    real(8) :: xi   ! track intersection point with mesh
     real(8) :: xm0 ! lower-left coordinates of mesh
     real(8) :: xm1 ! upper-right coordinates of mesh
 
