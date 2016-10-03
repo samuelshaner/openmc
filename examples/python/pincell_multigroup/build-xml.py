@@ -42,6 +42,8 @@ uo2_xsdata.set_nu_fission([2.005998E-02, 2.027303E-03, 1.570599E-02,
                            5.257105E-01])
 uo2_xsdata.set_chi([5.8791E-01, 4.1176E-01, 3.3906E-04, 1.1761E-07, 0.0000E+00,
                     0.0000E+00, 0.0000E+00])
+#uo2_xsdata.set_inverse_velocity([5.8791E-01, 4.1176E-01, 3.3906E-04, 1.1761E-07, 0.0000E+00,
+#                    0.0000E+00, 0.0000E+00])
 
 h2o_xsdata = openmc.XSdata('LWTR', groups)
 h2o_xsdata.order = 0
@@ -62,7 +64,6 @@ h2o_xsdata.set_scatter_matrix(
 mg_cross_sections_file = openmc.MGXSLibrary(groups)
 mg_cross_sections_file.add_xsdatas([uo2_xsdata, h2o_xsdata])
 mg_cross_sections_file.export_to_hdf5()
-
 
 ###############################################################################
 #                 Exporting to OpenMC materials.xml file

@@ -105,8 +105,8 @@ class XSdata(object):
     nu_fission : dict of numpy.ndarray
         Group-wise fission production cross section vector (i.e., if ``chi`` is
         provided), or is the group-wise fission production matrix.
-    inverse_velocities : dict of numpy.ndarray
-        Inverse of velocities, in units of sec/cm.
+    inverse_velocity : dict of numpy.ndarray
+        Inverse of velocity, in units of sec/cm.
 
     Notes
     -----
@@ -120,7 +120,7 @@ class XSdata(object):
 
     vector_shape :
         total, absorption, fission, kappa_fission, chi, nu_fission (if chi is
-        provided), inverse_velocities
+        provided), inverse_velocity
     matrix_shape :
         multiplicity_matrix, nu_fission (if chi is not provided)
     pn_matrix_shape :
@@ -150,7 +150,7 @@ class XSdata(object):
         self._nu_fission = len(temperatures) * [None]
         self._kappa_fission = len(temperatures) * [None]
         self._chi = len(temperatures) * [None]
-        self._inverse_velocities = len(temperatures) * [None]
+        self._inverse_velocity = len(temperatures) * [None]
 
     @property
     def name(self):
@@ -364,7 +364,7 @@ class XSdata(object):
         self._nu_fission.append(None)
         self._kappa_fission.append(None)
         self._chi.append(None)
-        self._inverse_velocities.append(None)
+        self._inverse_velocity.append(None)
 
     def set_total(self, total, temperature=294.):
         """This method sets the cross section for this XSdata object at the
@@ -636,30 +636,30 @@ class XSdata(object):
         if np.sum(npnu_fission) > 0.0:
             self._fissionable = True
 
-    def set_inverse_velocities(self, inv_vel, temperature=294.):
-        """This method sets the inverse velocities for this XSdata object at the
+    def set_inverse_velocity(self, inv_vel, temperature=294.):
+        """This method sets the inverse velocity for this XSdata object at the
         provided temperature.
 
         Parameters
         ----------
         inv_vel: np.ndarray
-            Inverse velocities in units of sec/cm.
+            Inverse velocity in units of sec/cm.
         temperature : float
             Temperature (in units of Kelvin) of the provided dataset. Defaults
             to 294K
 
         """
-        check_type('inverse velocities', inv_vel, Iterable,
+        check_type('inverse_velocity', inv_vel, Iterable,
                    expected_iter_type=Real)
         # Convert to a numpy array so we can easily get the shape for checking
         npinv_vel = np.asarray(inv_vel)
-        check_value('inverse velocities shape', npinv_vel.shape,
+        check_value('inverse_velocity shape', npinv_vel.shape,
                     [self.vector_shape])
         check_type('temperature', temperature, Real)
         check_value('temperature', temperature, self.temperatures)
 
         i = self.temperatures.tolist().index(temperature)
-        self._inverse_velocities[i] = npinv_vel
+        self._inverse_velocity[i] = npinv_vel
 
     def set_total_mgxs(self, total, temperature=294., nuclide='total',
                        xs_type='macro', subdomain=None):
@@ -1252,9 +1252,9 @@ class XSdata(object):
                 scatt_grp.create_dataset("g_max", data=g_out_bounds[:, :, :, 1])
 
             # Add the kinetics data
-            if self._inverse_velocities[i] is not None:
-                xs_grp.create_dataset("inverse-velocities",
-                                      data=self._inverse_velocities[i])
+            if self._inverse_velocity[i] is not None:
+                xs_grp.create_dataset("inverse-velocity",
+                                      data=self._inverse_velocity[i])
 
 
 class MGXSLibrary(object):
@@ -1360,7 +1360,7 @@ class MGXSLibrary(object):
 
         # Create and write to the HDF5 file
         file = h5py.File(filename, "w")
-        file.attrs['groups'] = self.energy_groups.num_groups
+        file.attrs['energy_groups'] = self.energy_groups.num_groups
         file.attrs['group structure'] = self.energy_groups.group_edges
 
         for xsdata in self._xsdatas:
