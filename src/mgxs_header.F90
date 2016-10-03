@@ -211,9 +211,8 @@ module mgxs_header
   contains
 
 !===============================================================================
-! MGXS*_INIT reads in the data from the XML file.  At the point of entry
-! the file would have been opened and metadata read.  This routine begins with
-! the xs_id object node itself.
+! MGXS*_FROM_HDF5 reads in the data from the HDF5 Library. At the point of entry
+! the file would have been opened and metadata read.
 !===============================================================================
 
     subroutine mgxs_from_hdf5(this, xs_id, temperature, method, tolerance, &
@@ -2286,7 +2285,7 @@ module mgxs_header
               nuc_ts(1) = minloc(abs(nuc % kTs - temp_desired), dim=1)
               temp_actual = nuc % kTs(nuc_ts(1))
 
-              if (abs(temp_actual - temp_desired) >= tolerance) then
+              if (abs(temp_actual - temp_desired) >= K_BOLTZMANN * tolerance) then
                 call fatal_error("MGXS library does not contain cross sections &
                      &for " // trim(this % name) // " at or near " // &
                      trim(to_str(nint(temp_desired / K_BOLTZMANN))) // " K.")
@@ -2310,7 +2309,7 @@ module mgxs_header
 
               call fatal_error("Nuclear data library does not contain cross sections &
                    &for " // trim(this % name) // " at temperatures that bound " // &
-                   trim(to_str(nint(temp_desired))) // " K.")
+                   trim(to_str(nint(temp_desired / K_BOLTZMANN))) // " K.")
             end select
 
             select type(nuc)
@@ -2616,7 +2615,7 @@ module mgxs_header
             nuc_ts(1) = minloc(abs(nuc % kTs - temp_desired), dim=1)
             temp_actual = nuc % kTs(nuc_ts(1))
 
-            if (abs(temp_actual - temp_desired) >= tolerance) then
+            if (abs(temp_actual - temp_desired) >= K_BOLTZMANN * tolerance) then
               call fatal_error("MGXS library does not contain cross sections &
                    &for " // trim(this % name) // " at or near " // &
                    trim(to_str(nint(temp_desired / K_BOLTZMANN))) // " K.")
@@ -2640,7 +2639,7 @@ module mgxs_header
 
             call fatal_error("Nuclear data library does not contain cross sections &
                  &for " // trim(this % name) // " at temperatures that bound " // &
-                 trim(to_str(nint(temp_desired))) // " K.")
+                 trim(to_str(nint(temp_desired / K_BOLTZMANN))) // " K.")
           end select
 
              ! Copy atom density of nuclide in material
