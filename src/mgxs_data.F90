@@ -158,6 +158,8 @@ contains
     type(Material), pointer       :: mat   ! current material
     type(VectorReal), allocatable :: kTs(:)
 
+    allocate(macro_xs(n_materials))
+
     ! Get temperatures to read for each material
     call get_mat_kTs(kTs)
 
