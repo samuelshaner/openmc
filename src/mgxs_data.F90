@@ -33,7 +33,6 @@ contains
     integer(HID_T)          :: file_id
     integer(HID_T)          :: xsdata_group
     logical                 :: file_exists
-    integer                 :: l
     type(DictCharInt)       :: xsdata_dict
     type(VectorReal), allocatable :: temps(:)
 

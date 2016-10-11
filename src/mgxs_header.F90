@@ -3164,7 +3164,6 @@ module mgxs_header
       real(8) :: prob_pd          ! Running probability for prompt/delayed
       real(8) :: prob_gout        ! Running probability for gout
       real(8) :: nu, nu_prompt
-      integer :: iazi, ipol
 
       ! Get nu and nu_prompt
       nu = this % get_xs('nu', gin, uvw=uvw)
@@ -3181,13 +3180,12 @@ module mgxs_header
         dg = 0
 
         gout = 1
-        prob_gout = this % xs(this % index_temp) &
-             % chi_prompt(gout, gin, iazi, ipol)
+        prob_gout = this % get_xs('chi_prompt', gin, gout, uvw=uvw)
 
         do while (prob_gout < xi_gout)
           gout = gout + 1
           prob_gout = prob_gout + &
-               this % xs(this % index_temp) % chi_prompt(gout, gin, iazi, ipol)
+               this % get_xs('chi_prompt', gin, gout, uvw=uvw)
         end do
 
         ! Neutron is born delayed
@@ -3208,13 +3206,11 @@ module mgxs_header
 
         ! Get the outgoing group
         gout = 1
-        prob_gout = this % xs(this % index_temp) % &
-             chi_delayed(gout, gin, iazi, ipol, dg)
+        prob_gout = this % get_xs('chi_delayed', gin, gout, uvw=uvw, dg=dg)
 
-        do while (prob < xi_gout)
+        do while (prob_gout < xi_gout)
           gout = gout + 1
-          prob_gout = prob_gout + this % xs(this % index_temp) % &
-               chi_delayed(gout, gin, iazi, ipol, dg)
+          prob_gout = this % get_xs('chi_delayed', gin, gout, uvw=uvw, dg=dg)
         end do
       end if
 
