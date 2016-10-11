@@ -19,7 +19,7 @@ groups = openmc.mgxs.EnergyGroups(group_edges=[1E-11, 0.0635E-6, 10.0E-6,
                                                1.0E-4, 1.0E-3, 0.5, 1.0, 20.0])
 
 # Instantiate the 7-group (C5G7) cross section data
-uo2_xsdata = openmc.XSdata('UO2', groups)
+uo2_xsdata = openmc.XSdata('UO2', groups, delayed_groups=2)
 uo2_xsdata.order = 0
 uo2_xsdata.set_total(
     [0.1779492, 0.3298048, 0.4803882, 0.5543674, 0.3118013, 0.3951678,
@@ -40,10 +40,28 @@ uo2_xsdata.set_fission([7.21206E-03, 8.19301E-04, 6.45320E-03,
 uo2_xsdata.set_nu_fission([2.005998E-02, 2.027303E-03, 1.570599E-02,
                            4.518301E-02, 4.334208E-02, 2.020901E-01,
                            5.257105E-01])
+uo2_xsdata.set_prompt_nu_fission([1.005998E-02, 2.027303E-03, 2.570599E-02,
+                                  4.518301E-02, 4.334208E-02, 2.020901E-01,
+                                  5.257105E-01])
+uo2_xsdata.set_delayed_nu_fission([[0.005998E-04, 2.027303E-05, 3.570599E-04,
+                                    4.518301E-04, 4.334208E-04, 2.020901E-03,
+                                    5.257105E-03],
+                                   [0.005998E-04, 2.027303E-05, 3.570599E-04,
+                                    4.518301E-04, 4.334208E-04, 2.020901E-03,
+                                    5.257105E-03]])
 uo2_xsdata.set_chi([5.8791E-01, 4.1176E-01, 3.3906E-04, 1.1761E-07, 0.0000E+00,
                     0.0000E+00, 0.0000E+00])
-#uo2_xsdata.set_inverse_velocity([5.8791E-01, 4.1176E-01, 3.3906E-04, 1.1761E-07, 0.0000E+00,
-#                    0.0000E+00, 0.0000E+00])
+uo2_xsdata.set_chi_prompt([4.8791E-01, 5.1176E-01, 3.3906E-04, 1.1761E-07, 0.0000E+00,
+                           0.0000E+00, 0.0000E+00])
+uo2_xsdata.set_chi_delayed([[4.8791E-01, 5.1176E-01, 3.3906E-04, 1.1761E-07, 0.0000E+00,
+                             0.0000E+00, 0.0000E+00],
+                            [1.8791E-01, 7.1176E-01, 3.3906E-04, 1.1761E-07, 0.0000E+00,
+                             0.0000E+00, 0.0000E+00]])
+uo2_xsdata.set_beta([0.01, 0.02])
+uo2_xsdata.set_decay_rate([0.01, 0.02])
+
+uo2_xsdata.set_inverse_velocity([5.8791E-01, 4.1176E-01, 3.3906E-04, 1.1761E-07, 0.0000E+00,
+                    0.0000E+00, 0.0000E+00])
 
 h2o_xsdata = openmc.XSdata('LWTR', groups)
 h2o_xsdata.order = 0
@@ -61,7 +79,7 @@ h2o_xsdata.set_scatter_matrix(
       [0.0000000, 0.0000000, 0.0000000, 0.0000000, 0.0022157, 0.6999130, 0.5373200],
       [0.0000000, 0.0000000, 0.0000000, 0.0000000, 0.0000000, 0.1324400, 2.4807000]]])
 
-mg_cross_sections_file = openmc.MGXSLibrary(groups)
+mg_cross_sections_file = openmc.MGXSLibrary(groups, delayed_groups=2)
 mg_cross_sections_file.add_xsdatas([uo2_xsdata, h2o_xsdata])
 mg_cross_sections_file.export_to_hdf5()
 
