@@ -423,7 +423,9 @@ module mgxs_header
 
       character(MAX_LINE_LEN)     :: temp_str
       integer(HID_T)              :: xsdata, xsdata_grp, scatt_grp, ndims
-      real(8), allocatable        :: temp_arr(:), temp_2d(:, :), temp_beta(:)
+      integer(HSIZE_T)            :: dims(2)
+      real(8), allocatable        :: temp_arr(:), temp_2d(:, :)
+      real(8), allocatable        :: temp_3d(:, :, :), temp_beta(:, :)
       real(8)                     :: dmu, mu, norm
       integer                     :: order, order_dim, gin, gout, l, imu, length
       type(VectorInt)             :: temps_to_read
@@ -468,11 +470,51 @@ module mgxs_header
           if (this % fissionable) then
 
             ! Allocate temporary array for beta
-            allocate(temp_beta(delayed_groups))
+            allocate(temp_beta(energy_groups, delayed_groups))
 
             ! Set beta
             if (check_dataset(xsdata_grp, "beta")) then
-              call read_dataset(temp_beta, xsdata_grp, "beta")
+
+              ! Get the dimensions of the beta dataset
+              xsdata = open_dataset(xsdata_grp, "beta")
+              call get_ndims(xsdata, ndims)
+
+              ! Beta is input as (delayed_groups)
+              if (ndims == 1) then
+
+                ! Allocate temporary array for beta
+                allocate(temp_arr(delayed_groups))
+
+                ! Read beta
+                call read_dataset(temp_arr, xsdata_grp, "beta")
+
+                do dg = 1, delayed_groups
+                  do gin = 1, energy_groups
+                    temp_beta(gin, dg) = temp_arr(dg)
+                  end do
+                end do
+
+                ! Deallocate temporary beta array
+                deallocate(temp_arr)
+
+                ! Beta is input as (delayed_groups, energy_groups)
+              else if (ndims == 2) then
+
+                ! Allocate temporary array for beta
+                allocate(temp_arr(delayed_groups * energy_groups))
+
+                ! Read beta
+                call read_dataset(temp_arr, xsdata_grp, "beta")
+
+                ! Reshape array and set to dedicated beta array
+                temp_beta = reshape(temp_arr, (/energy_groups, delayed_groups/))
+
+                ! Deallocate temporary beta array
+                deallocate(temp_arr)
+
+              else
+                call fatal_error("beta must be provided as a 1D or 2D array")
+              end if
             else
               temp_beta = ZERO
             end if
@@ -492,8 +534,13 @@ module mgxs_header
                 end do
 
                 ! Normalize chi_prompt so its CDF goes to 1
-                xs % chi_prompt(:, gin) = xs % chi_prompt(:, gin) / &
-                     sum(xs % chi_prompt(:, gin))
+                if (sum(xs % chi_prompt(:, gin)) == ZERO) then
+                  call fatal_error("Encountered chi for a group that sums to &
+                       &zero")
+                else
+                  xs % chi_prompt(:, gin) = xs % chi_prompt(:, gin) / &
+                       sum(xs % chi_prompt(:, gin))
+                end if
               end do
 
               ! Set chi_delayed to chi_prompt
@@ -527,12 +574,12 @@ module mgxs_header
                   do dg = 1, delayed_groups
 
                     ! Set delayed_nu_fission using delayed neutron fraction
-                    xs % delayed_nu_fission(gin, dg) = temp_beta(dg) * &
+                    xs % delayed_nu_fission(gin, dg) = temp_beta(gin, dg) * &
                          xs % prompt_nu_fission(gin)
                   end do
 
                   ! Correct prompt_nu_fission using delayed neutron fraction
-                  xs % prompt_nu_fission(gin) = (1 - sum(temp_beta)) * &
+                  xs % prompt_nu_fission(gin) = (1 - sum(temp_beta(gin, :))) * &
                        xs % prompt_nu_fission(gin)
                 end do
 
@@ -560,12 +607,12 @@ module mgxs_header
                   do dg = 1, delayed_groups
 
                     ! Set delayed_nu_fission using delayed neutron fraction
-                    xs % delayed_nu_fission(gin, dg) = temp_beta(dg) * &
+                    xs % delayed_nu_fission(gin, dg) = temp_beta(gin, dg) * &
                          xs % prompt_nu_fission(gin)
                   end do
 
                   ! Correct prompt_nu_fission using delayed neutron fraction
-                  xs % prompt_nu_fission(gin) = (1 - sum(temp_beta)) * &
+                  xs % prompt_nu_fission(gin) = (1 - sum(temp_beta(gin, :))) * &
                        xs % prompt_nu_fission(gin)
                 end do
 
@@ -577,8 +624,13 @@ module mgxs_header
 
                 ! Normalize chi so its CDF goes to 1
                 do gin = 1, energy_groups
-                  xs % chi_prompt(:, gin) = xs % chi_prompt(:, gin) / &
-                       sum(xs % chi_prompt(:, gin))
+                  if (sum(xs % chi_prompt(:, gin)) == ZERO) then
+                    call fatal_error("Encountered chi for a group that sums to &
+                         &zero")
+                  else
+                    xs % chi_prompt(:, gin) = xs % chi_prompt(:, gin) / &
+                         sum(xs % chi_prompt(:, gin))
+                  end if
                 end do
 
                 ! Set chi_delayed to chi_prompt
@@ -606,8 +658,13 @@ module mgxs_header
                 end do
 
                 ! Normalize chi so its CDF goes to 1
-                xs % chi_prompt(:, gin) = xs % chi_prompt(:, gin) / &
-                     sum(xs % chi_prompt(:, gin))
+                if (sum(xs % chi_prompt(:, gin)) == ZERO) then
+                  call fatal_error("Encountered chi prompt for a group that &
+                       &sums to zero")
+                else
+                  xs % chi_prompt(:, gin) = xs % chi_prompt(:, gin) / &
+                       sum(xs % chi_prompt(:, gin))
+                end if
               end do
 
               ! Deallocate temporary array for chi_prompt
@@ -637,9 +694,14 @@ module mgxs_header
                     end do
 
                     ! Normalize chi so its CDF goes to 1
-                    xs % chi_delayed(:, gin, dg) = &
-                         xs % chi_delayed(:, gin, dg) / &
-                         sum(xs % chi_delayed(:, gin, dg))
+                    if (sum(xs % chi_delayed(:, gin, dg)) == ZERO) then
+                      call fatal_error("Encountered chi delayed for a group &
+                           &that sums to zero")
+                    else
+                      xs % chi_delayed(:, gin, dg) = &
+                           xs % chi_delayed(:, gin, dg) / &
+                           sum(xs % chi_delayed(:, gin, dg))
+                    end if
                   end do
                 end do
 
@@ -649,23 +711,28 @@ module mgxs_header
               else if (ndims == 2) then
 
                 ! Allocate temporary array for chi_delayed
-                allocate(temp_arr(energy_groups * delayed_groups))
+                allocate(temp_arr(delayed_groups * energy_groups))
 
                 ! Get chi-delayed
                 call read_dataset(temp_arr, xsdata_grp, "chi-delayed")
-                allocate(temp_2d(delayed_groups, energy_groups))
-                temp_2d = reshape(temp_arr, (/delayed_groups, energy_groups/))
+                allocate(temp_2d(energy_groups, delayed_groups))
+                temp_2d = reshape(temp_arr, (/energy_groups, delayed_groups/))
 
                 do dg = 1, delayed_groups
                   do gin = 1, energy_groups
                     do gout = 1, energy_groups
-                      xs % chi_delayed(gout, gin, dg) = temp_2d(dg, gout)
+                      xs % chi_delayed(gout, gin, dg) = temp_2d(gout, dg)
                     end do
 
                     ! Normalize chi so its CDF goes to 1
-                    xs % chi_delayed(:, gin, dg) = &
-                         xs % chi_delayed(:, gin, dg) / &
-                         sum(xs % chi_delayed(:, gin, dg))
+                    if (sum(xs % chi_delayed(:, gin, dg)) == ZERO) then
+                      call fatal_error("Encountered chi delayed for a group &
+                           &that sums to zero")
+                    else
+                      xs % chi_delayed(:, gin, dg) = &
+                           xs % chi_delayed(:, gin, dg) / &
+                           sum(xs % chi_delayed(:, gin, dg))
+                    end if
                   end do
                 end do
 
@@ -682,12 +749,61 @@ module mgxs_header
             ! If prompt-nu-fission present, set prompt_nu_fission
             if (check_dataset(xsdata_grp, "prompt-nu-fission")) then
 
-              ! Set prompt_nu_fission
-              call read_dataset(xs % prompt_nu_fission, xsdata_grp, &
-                   "prompt-nu-fission")
+              ! Get the dimensions of the prompt-nu-fission dataset
+              xsdata = open_dataset(xsdata_grp, "prompt-nu-fission")
+              call get_ndims(xsdata, ndims)
+
+              ! If prompt-nu-fission is a vector
+              if (ndims == 1) then
+
+                ! Set prompt_nu_fission
+                call read_dataset(xs % prompt_nu_fission, xsdata_grp, &
+                     "prompt-nu-fission")
+
+                ! If prompt-nu-fission is a matrix, set prompt_nu_fission and
+                ! chi_prompt.
+              else if (ndims == 2) then
+
+                ! chi_prompt is embedded in prompt_nu_fission -> extract
+                ! chi_prompt
+                allocate(temp_arr(energy_groups * energy_groups))
+                call read_dataset(temp_arr, xsdata_grp, "prompt-nu-fission")
+                allocate(temp_2d(energy_groups, energy_groups))
+                temp_2d = reshape(temp_arr, (/energy_groups, energy_groups/))
+
+                ! Deallocate temporary 1D array for prompt_nu_fission matrix
+                deallocate(temp_arr)
+
+                ! Set the vector prompt-nu-fission from the matrix
+                ! prompt-nu-fission
+                do gin = 1, energy_groups
+                  xs % prompt_nu_fission(gin) = sum(temp_2d(:, gin))
+                end do
+
+                ! Now pull out information needed for chi
+                xs % chi_prompt(:, :) = temp_2d
+
+                ! Deallocate temporary 2D array for nu_fission matrix
+                deallocate(temp_2d)
+
+                ! Normalize chi so its CDF goes to 1
+                do gin = 1, energy_groups
+                  if (sum(xs % chi_prompt(:, gin)) == ZERO) then
+                    call fatal_error("Encountered chi prompt for a group &
+                         &that sums to zero")
+                  else
+                    xs % chi_prompt(:, gin) = xs % chi_prompt(:, gin) / &
+                         sum(xs % chi_prompt(:, gin))
+                  end if
+                end do
+              else
+                call fatal_error("prompt-nu-fission must be provided as a 1D &
+                     &or 2D array")
+              end if
             end if
 
-            ! If delayed-nu-fission present, set delayed_nu_fission
+            ! If delayed-nu-fission provided, set delayed_nu_fission. If
+            ! delayed-nu-fission is a matrix, set chi_delayed.
             if (check_dataset(xsdata_grp, "delayed-nu-fission")) then
 
               ! Get the dimensions of the delayed-nu-fission dataset
@@ -698,7 +814,7 @@ module mgxs_header
               if (ndims == 1) then
 
                 ! If beta is zeros, raise error
-                if (temp_beta(1) == ZERO) then
+                if (temp_beta(1,1) == ZERO) then
                   call fatal_error("cannot set delayed-nu-fission with a 1D &
                        &array if beta not provided")
                 end if
@@ -713,7 +829,7 @@ module mgxs_header
                   do dg = 1, delayed_groups
 
                     ! Set delayed_nu_fission using delayed neutron fraction
-                    xs % delayed_nu_fission(gin, dg) = temp_beta(dg) * &
+                    xs % delayed_nu_fission(gin, dg) = temp_beta(gin, dg) * &
                          temp_arr(gin)
                   end do
                 end do
@@ -721,32 +837,98 @@ module mgxs_header
                 ! Deallocate temporary delayed_nu_fission array
                 deallocate(temp_arr)
 
-                ! If delayed-nu-fission is a matrix
+                ! If delayed-nu-fission is a (delayed_group, energy_group)
+                ! matrix, set delayed_nu_fission separately for each delayed
+                ! group.
               else if (ndims == 2) then
 
-                ! Allocate temporary array for delayed_nu_fission
-                allocate(temp_arr(energy_groups * delayed_groups))
+                ! Get the shape of delayed-nu-fission
+                call get_shape(xsdata, dims)
 
-                ! Get delayed-nu-fission
+                ! Issue error if 1st dimension not correct
+                if (dims(1) /= energy_groups) then
+                  call fatal_error("The delayed-nu-fission matrix was input &
+                       &with a 1st dimension not equal to the number of &
+                       &energy groups.")
+                end if
+
+                ! Issue error if 2nd dimension not correct
+                if (dims(2) /= delayed_groups) then
+                  call fatal_error("The delayed-nu-fission matrix was input &
+                       &with a 2nd dimension not equal to the number of &
+                       &delayed groups.")
+                end if
+
+                ! Issue warning if delayed_groups == energy_groups
+                if (delayed_groups == energy_groups) then
+                  call warning("delayed-nu-fission was input as a dimension &
+                       &2 matrix with the same number of delayed groups and &
+                       &groups. It is important to know that OpenMC assumes &
+                       &the dimensions in the matrix are (energy_groups, &
+                       &delayed_groups). If the intention was to have the &
+                       &matrix as (energy_groups, energy_groups), the &
+                       &delayed-nu-fission should be separately for each &
+                       &delayed group as a (energy_groups, energy_groups, &
+                       &delayed_groups) matrix.")
+                end if
+
+                ! Get delayed_nu_fission
+                allocate(temp_arr(delayed_groups * energy_groups))
                 call read_dataset(temp_arr, xsdata_grp, "delayed-nu-fission")
-                allocate(temp_2d(delayed_groups, energy_groups))
-                temp_2d = reshape(temp_arr, (/delayed_groups, energy_groups/))
+                allocate(temp_2d(energy_groups, delayed_groups))
+                xs % delayed_nu_fission = reshape(temp_arr, (/energy_groups, &
+                     delayed_groups/))
 
-                do gin = 1, energy_groups
-                  do dg = 1, delayed_groups
-
-                    ! Set delayed_nu_fission using delayed neutron fraction
-                    xs % delayed_nu_fission(gin, dg) = temp_2d(dg, gin)
-                  end do
-                end do
-
-                ! Deallocate temporary arrays for delayed_nu_fission
+                ! Deallocate temporary arrays for delayed_nu_fission matrix
                 deallocate(temp_arr)
                 deallocate(temp_2d)
 
+                ! If delayed nu-fission is a 3D matrix, set delayed_nu_fission
+                ! and chi_delayed.
+              else if (ndims == 3) then
+
+                ! chi_delayed is embedded in delayed_nu_fission -> extract
+                ! chi_delayed
+                allocate(temp_arr(delayed_groups * energy_groups * &
+                     energy_groups))
+                call read_dataset(temp_arr, xsdata_grp, "delayed-nu-fission")
+                allocate(temp_3d(energy_groups, energy_groups, delayed_groups))
+                temp_3d = reshape(temp_arr, (/energy_groups, energy_groups, &
+                     delayed_groups/))
+
+                ! Deallocate temporary 1D array for delayed_nu_fission matrix
+                deallocate(temp_arr)
+
+                ! Set the 2D delayed-nu-fission matrix and 3D chi_dealyed matrix
+                ! from the 3D delayed-nu-fission matrix
+                do dg = 1, delayed_groups
+                  do gin = 1, energy_groups
+                    xs % delayed_nu_fission(gin, dg) = sum(temp_3d(:, gin, dg))
+                    do gout = 1, energy_groups
+                      xs % chi_delayed(gout, gin, dg) = temp_3d(gout, gin, dg)
+                    end do
+                  end do
+                end do
+
+                ! Normalize chi_delayed so its CDF goes to 1
+                do dg = 1, delayed_groups
+                  do gin = 1, energy_groups
+                    if (sum(xs % chi_delayed(:, gin, dg)) == ZERO) then
+                      call fatal_error("Encountered chi delayed for a group &
+                           &that sums to zero")
+                    else
+                      xs % chi_delayed(:, gin, dg) = &
+                           xs % chi_delayed(:, gin, dg) / &
+                           sum(xs % chi_delayed(:, gin, dg))
+                    end if
+                  end do
+                end do
+
+                ! Deallocate temporary 3D matrix for delayed_nu_fission
+                deallocate(temp_3d)
               else
-                call fatal_error("delayed-nu-fission must be provided as a 1D &
-                     &or 2D array")
+                call fatal_error("delayed-nu-fission must be provided as a &
+                     &1D, 2D, or 3D array")
               end if
             end if
 

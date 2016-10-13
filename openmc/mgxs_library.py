@@ -68,18 +68,6 @@ class XSdata(object):
     num_polar : int
         Number of equal width angular bins that the polar angular domain is
         subdivided into. This only applies when ``representation`` is "angle".
-    vector_shape : iterable of int
-        Dimensionality of vector multi-group cross sections (e.g., the total
-        cross section).  The return result depends on the value of
-        ``representation``.
-    matrix_shape : iterable of int
-        Dimensionality of matrix multi-group cross sections (e.g., the
-        fission matrix cross section).  The return result depends on the
-        value of ``representation``.
-    pn_matrix_shape : iterable of int
-        Dimensionality of scattering matrix data (e.g., the
-        scattering matrix cross section).  The return result depends on the
-        value of ``representation``.
     total : dict of numpy.ndarray
         Group-wise total cross section.
     absorption : dict of numpy.ndarray
@@ -125,29 +113,6 @@ class XSdata(object):
         Delayed-group-wise decay rate cross section vector.
     inverse_velocity : dict of numpy.ndarray
         Inverse of velocity, in units of sec/cm.
-
-    Notes
-    -----
-    The parameters containing cross section data have dimensionalities which
-    depend upon the value of ``representation`` as well as the number of
-    Legendre or other angular dimensions as described by ``order``. The
-    ``vector_shape``, ``delayed_vector_shape``, ``matrix_shape``,
-    ``delayed_matrix_shape``, and ``pn_matrix_shape`` properties are
-    provided to obtain the dimensionality of the data for each temperature.
-
-    The following are cross sections which should use each of these properties:
-
-    vector_shape :
-        total, absorption, fission, kappa_fission, chi, chi_prompt, chi_delayed,
-        nu_fission, prompt_nu_fission, delayed_nu_fission, inverse_velocity
-    delayed_vector_shape :
-        beta, decay_rate
-    matrix_shape :
-        multiplicity_matrix, nu_fission
-    delayed_matrix_shape :
-        delayed_nu_fission, chi_delayed
-    pn_matrix_shape :
-        scatter_matrix
 
     """
 
@@ -281,51 +246,6 @@ class XSdata(object):
                 return self._order + 1
             else:
                 return self._order
-
-    @property
-    def vector_shape(self):
-        if self.representation == 'isotropic':
-            return (self.energy_groups.num_groups,)
-        elif self.representation == 'angle':
-            return (self.num_polar, self.num_azimuthal,
-                    self.energy_groups.num_groups)
-
-    @property
-    def delayed_vector_shape(self):
-        if self.representation == 'isotropic':
-            return (self.delayed_groups,)
-        elif self.representation == 'angle':
-            return (self.delayed_groups, self.num_polar, self.num_azimuthal,
-                    self.energy_groups.num_groups)
-
-    @property
-    def matrix_shape(self):
-        if self.representation == 'isotropic':
-            return (self.energy_groups.num_groups,
-                    self.energy_groups.num_groups)
-        elif self.representation == 'angle':
-            return (self.num_polar, self.num_azimuthal,
-                    self.energy_groups.num_groups,
-                    self.energy_groups.num_groups)
-
-    @property
-    def delayed_matrix_shape(self):
-        if self.representation == 'isotropic':
-            return (self.delayed_groups,
-                    self.energy_groups.num_groups)
-        elif self.representation == 'angle':
-            return (self.delayed_groups, self.num_polar, self.num_azimuthal,
-                    self.energy_groups.num_groups)
-
-    @property
-    def pn_matrix_shape(self):
-        if self.representation == 'isotropic':
-            return (self.num_orders, self.energy_groups.num_groups,
-                    self.energy_groups.num_groups)
-        elif self.representation == 'angle':
-            return (self.num_polar, self.num_azimuthal, self.num_orders,
-                    self.energy_groups.num_groups,
-                    self.energy_groups.num_groups)
 
     @name.setter
     def name(self, name):
@@ -470,9 +390,16 @@ class XSdata(object):
 
         check_type('total', total, Iterable, expected_iter_type=Real)
 
+        # Get the accepted shapes for this xs
+        if self.representation is 'isotropic':
+            shapes = [(self.energy_groups.num_groups,)]
+        else:
+            shapes = [(self.num_polar, self.num_azimuthal,
+                      self.energy_groups.num_groups)]
+
         # Convert to a numpy array so we can easily get the shape for checking
         nptotal = np.asarray(total)
-        check_value('total shape', nptotal.shape, [self.vector_shape])
+        check_value('total shape', nptotal.shape, shapes)
         check_type('temperature', temperature, Real)
         check_value('temperature', temperature, self.temperatures)
 
@@ -499,10 +426,16 @@ class XSdata(object):
 
         check_type('absorption', absorption, Iterable, expected_iter_type=Real)
 
+        # Get the accepted shapes for this xs
+        if self.representation is 'isotropic':
+            shapes = [(self.energy_groups.num_groups,)]
+        else:
+            shapes = [(self.num_polar, self.num_azimuthal,
+                      self.energy_groups.num_groups)]
+
         # Convert to a numpy array so we can easily get the shape for checking
         npabsorption = np.asarray(absorption)
-        check_value('absorption shape', npabsorption.shape,
-                    [self.vector_shape])
+        check_value('absorption shape', npabsorption.shape, shapes)
         check_type('temperature', temperature, Real)
         check_value('temperature', temperature, self.temperatures)
 
@@ -529,9 +462,16 @@ class XSdata(object):
 
         check_type('fission', fission, Iterable, expected_iter_type=Real)
 
+        # Get the accepted shapes for this xs
+        if self.representation is 'isotropic':
+            shapes = [(self.energy_groups.num_groups,)]
+        else:
+            shapes = [(self.num_polar, self.num_azimuthal,
+                      self.energy_groups.num_groups)]
+
         # Convert to a numpy array so we can easily get the shape for checking
         npfission = np.asarray(fission)
-        check_value('fission shape', npfission.shape, [self.vector_shape])
+        check_value('fission shape', npfission.shape, shapes)
         check_type('temperature', temperature, Real)
         check_value('temperature', temperature, self.temperatures)
 
@@ -562,10 +502,16 @@ class XSdata(object):
         check_type('kappa_fission', kappa_fission, Iterable,
                    expected_iter_type=Real)
 
+        # Get the accepted shapes for this xs
+        if self.representation is 'isotropic':
+            shapes = [(self.energy_groups.num_groups,)]
+        else:
+            shapes = [(self.num_polar, self.num_azimuthal,
+                      self.energy_groups.num_groups)]
+
         # Convert to a numpy array so we can easily get the shape for checking
         npkappa_fission = np.asarray(kappa_fission)
-        check_value('kappa fission shape', npkappa_fission.shape,
-                    [self.vector_shape])
+        check_value('kappa fission shape', npkappa_fission.shape, shapes)
         check_type('temperature', temperature, Real)
         check_value('temperature', temperature, self.temperatures)
 
@@ -593,16 +539,18 @@ class XSdata(object):
 
         """
 
-        check_type('chi', chi, Iterable, expected_iter_type=Real)
+        #check_type('chi', chi, Iterable, expected_iter_type=Real)
+
+        # Get the accepted shapes for this xs
+        if self.representation is 'isotropic':
+            shapes = [(self.energy_groups.num_groups,)]
+        else:
+            shapes = [(self.num_polar, self.num_azimuthal,
+                      self.energy_groups.num_groups)]
 
         # Convert to a numpy array so we can easily get the shape for checking
         npchi = np.asarray(chi)
-
-        # Check the shape
-        if npchi.shape != self.vector_shape:
-            msg = 'Provided chi iterable does not have the expected shape.'
-            raise ValueError(msg)
-
+        check_value('chi shape', npchi.shape, shapes)
         check_type('temperature', temperature, Real)
         check_value('temperature', temperature, self.temperatures)
 
@@ -627,16 +575,18 @@ class XSdata(object):
 
         """
 
-        check_type('chi-prompt', chi_prompt, Iterable, expected_iter_type=Real)
+        #check_type('chi-prompt', chi_prompt, Iterable, expected_iter_type=Real)
+
+        # Get the accepted shapes for this xs
+        if self.representation is 'isotropic':
+            shapes = [(self.energy_groups.num_groups,)]
+        else:
+            shapes = [(self.num_polar, self.num_azimuthal,
+                      self.energy_groups.num_groups)]
 
         # Convert to a numpy array so we can easily get the shape for checking
         npchi_prompt = np.asarray(chi_prompt)
-
-        # Check the shape
-        if npchi_prompt.shape != self.vector_shape:
-            msg = 'Provided chi-prompt iterable does not have the expected shape.'
-            raise ValueError(msg)
-
+        check_value('chi prompt shape', npchi_prompt.shape, shapes)
         check_type('temperature', temperature, Real)
         check_value('temperature', temperature, self.temperatures)
 
@@ -661,15 +611,21 @@ class XSdata(object):
 
         """
 
+        #check_type('chi-delayed', chi_delayed, Iterable, expected_iter_type=Real)
+
+        # Get the accepted shapes for this xs
+        if self.representation is 'isotropic':
+            shapes = [(self.energy_groups.num_groups,),
+                      (self.delayed_groups, self.energy_groups.num_groups)]
+        else:
+            shapes = [(self.num_polar, self.num_azimuthal,
+                       self.energy_groups.num_groups),
+                      (self.delayed_groups, self.num_polar, self.num_azimuthal,
+                       self.energy_groups.num_groups)]
+
         # Convert to a numpy array so we can easily get the shape for checking
         npchi_delayed = np.asarray(chi_delayed)
-
-        # Check the shape
-        if npchi_delayed.shape != self.vector_shape and \
-           npchi_delayed.shape != self.delayed_matrix_shape:
-            msg = 'Provided chi-delayed iterable does not have the expected shape.'
-            raise ValueError(msg)
-
+        check_value('chi delayed shape', npchi_delayed.shape, shapes)
         check_type('temperature', temperature, Real)
         check_value('temperature', temperature, self.temperatures)
 
@@ -694,16 +650,20 @@ class XSdata(object):
 
         """
 
-        check_type('beta', beta, Iterable, expected_iter_type=Real)
+        #check_type('beta', beta, Iterable, expected_iter_type=Real)
+
+        # Get the accepted shapes for this xs
+        if self.representation is 'isotropic':
+            shapes = [(self.delayed_groups,),
+                      (self.delayed_groups, self.energy_groups.num_groups)]
+        else:
+            shapes = [(self.delayed_groups, self.num_polar, self.num_azimuthal,
+                       self.energy_groups.num_groups),
+                      (self.delayed_groups, self.num_polar, self.num_azimuthal)]
 
         # Convert to a numpy array so we can easily get the shape for checking
         npbeta = np.asarray(beta)
-
-        # Check the shape
-        if npbeta.shape != self.delayed_vector_shape:
-            msg = 'Provided beta iterable does not have the expected shape.'
-            raise ValueError(msg)
-
+        check_value('beta shape', npbeta.shape, shapes)
         check_type('temperature', temperature, Real)
         check_value('temperature', temperature, self.temperatures)
 
@@ -730,14 +690,18 @@ class XSdata(object):
 
         check_type('decay_rate', decay_rate, Iterable, expected_iter_type=Real)
 
+        # Get the accepted shapes for this xs
+        if self.representation is 'isotropic':
+            shapes = [(self.delayed_groups,),
+                      (self.delayed_groups, self.energy_groups.num_groups)]
+        else:
+            shapes = [(self.delayed_groups, self.num_polar, self.num_azimuthal,
+                       self.energy_groups.num_groups),
+                      (self.delayed_groups, self.num_polar, self.num_azimuthal)]
+
         # Convert to a numpy array so we can easily get the shape for checking
         npdecay_rate = np.asarray(decay_rate)
-
-        # Check the shape
-        if npdecay_rate.shape != self.delayed_vector_shape:
-            msg = 'Provided decay_rate iterable does not have the expected shape.'
-            raise ValueError(msg)
-
+        check_value('decay rate shape', npdecay_rate.shape, shapes)
         check_type('temperature', temperature, Real)
         check_value('temperature', temperature, self.temperatures)
 
@@ -762,11 +726,20 @@ class XSdata(object):
 
         """
 
+        # Get the accepted shapes for this xs
+        if self.representation is 'isotropic':
+            shapes = [(self.num_orders, self.energy_groups.num_groups,
+                       self.energy_groups.num_groups)]
+        else:
+            shapes = [(self.num_polar, self.num_azimuthal, self.num_orders,
+                       self.energy_groups.num_groups,
+                       self.energy_groups.num_groups)]
+
         # Convert to a numpy array so we can easily get the shape for checking
         npscatter = np.asarray(scatter)
         check_iterable_type('scatter', npscatter, Real,
                             max_depth=len(npscatter.shape))
-        check_value('scatter shape', npscatter.shape, [self.pn_matrix_shape])
+        check_value('scatter shape', npscatter.shape, shapes)
         check_type('temperature', temperature, Real)
         check_value('temperature', temperature, self.temperatures)
 
@@ -791,12 +764,20 @@ class XSdata(object):
 
         """
 
+        # Get the accepted shapes for this xs
+        if self.representation is 'isotropic':
+            shapes = [(self.energy_groups.num_groups,
+                       self.energy_groups.num_groups)]
+        else:
+            shapes = [(self.num_polar, self.num_azimuthal,
+                       self.energy_groups.num_groups,
+                       self.energy_groups.num_groups)]
+
         # Convert to a numpy array so we can easily get the shape for checking
         npmultiplicity = np.asarray(multiplicity)
         check_iterable_type('multiplicity', npmultiplicity, Real,
                             max_depth=len(npmultiplicity.shape))
-        check_value('multiplicity shape', npmultiplicity.shape,
-                    [self.matrix_shape])
+        check_value('multiplicity shape', npmultiplicity.shape, shapes)
         check_type('temperature', temperature, Real)
         check_value('temperature', temperature, self.temperatures)
 
@@ -821,15 +802,21 @@ class XSdata(object):
 
         """
 
+        # Get the accepted shapes for this xs
+        if self.representation is 'isotropic':
+            shapes = [(self.energy_groups.num_groups,),
+                      (self.energy_groups.num_groups,
+                       self.energy_groups.num_groups)]
+        else:
+            shapes = [(self.num_polar, self.num_azimuthal,
+                       self.energy_groups.num_groups),
+                      (self.num_polar, self.num_azimuthal,
+                       self.energy_groups.num_groups,
+                      self.energy_groups.num_groups)]
+
         # Convert to a numpy array so we can easily get the shape for checking
         npnu_fission = np.asarray(nu_fission)
-
-        # nu_fission can be given as a vector or a matrix
-        # If nu_fission is a matrix, it will over-ride chi (if it has been
-        # provided).
-        check_value('nu_fission shape', npnu_fission.shape,
-                    [self.vector_shape, self.matrix_shape])
-
+        check_value('nu_fission shape', npnu_fission.shape, shapes)
         check_iterable_type('nu_fission', npnu_fission, Real,
                             max_depth=len(npnu_fission.shape))
         check_type('temperature', temperature, Real)
@@ -858,9 +845,21 @@ class XSdata(object):
 
         """
 
+       # Get the accepted shapes for this xs
+        if self.representation is 'isotropic':
+            shapes = [(self.energy_groups.num_groups,),
+                      (self.energy_groups.num_groups,
+                       self.energy_groups.num_groups)]
+        else:
+            shapes = [(self.num_polar, self.num_azimuthal,
+                       self.energy_groups.num_groups),
+                      (self.num_polar, self.num_azimuthal,
+                       self.energy_groups.num_groups,
+                      self.energy_groups.num_groups)]
+
         # Convert to a numpy array so we can easily get the shape for checking
         npprompt_nu_fission = np.asarray(prompt_nu_fission)
-
+        check_value('prompt_nu_fission shape', npprompt_nu_fission.shape, shapes)
         check_iterable_type('prompt_nu_fission', npprompt_nu_fission, Real,
                             max_depth=len(npprompt_nu_fission.shape))
         check_type('temperature', temperature, Real)
@@ -889,9 +888,22 @@ class XSdata(object):
 
         """
 
+       # Get the accepted shapes for this xs
+        if self.representation is 'isotropic':
+            shapes = [(self.delayed_groups, self.energy_groups.num_groups,),
+                      (self.delayed_groups, self.energy_groups.num_groups,
+                       self.energy_groups.num_groups)]
+        else:
+            shapes = [(self.delayed_groups, self.num_polar, self.num_azimuthal,
+                       self.energy_groups.num_groups),
+                      (self.delayed_groups, self.num_polar, self.num_azimuthal,
+                       self.energy_groups.num_groups,
+                      self.energy_groups.num_groups)]
+
         # Convert to a numpy array so we can easily get the shape for checking
         npdelayed_nu_fission = np.asarray(delayed_nu_fission)
-
+        check_value('delayed_nu_fission shape', npdelayed_nu_fission.shape,
+                    shapes)
         check_iterable_type('delayed_nu_fission', npdelayed_nu_fission, Real,
                             max_depth=len(npdelayed_nu_fission.shape))
         check_type('temperature', temperature, Real)
@@ -919,10 +931,16 @@ class XSdata(object):
         check_type('inverse_velocity', inv_vel, Iterable,
                    expected_iter_type=Real)
 
+        # Get the accepted shapes for this xs
+        if self.representation is 'isotropic':
+            shapes = [(self.energy_groups.num_groups,)]
+        else:
+            shapes = [(self.num_polar, self.num_azimuthal,
+                      self.energy_groups.num_groups)]
+
         # Convert to a numpy array so we can easily get the shape for checking
         npinv_vel = np.asarray(inv_vel)
-        check_value('inverse_velocity shape', npinv_vel.shape,
-                    [self.vector_shape])
+        check_value('inverse_velocity shape', npinv_vel.shape, shapes)
         check_type('temperature', temperature, Real)
         check_value('temperature', temperature, self.temperatures)
 
@@ -931,15 +949,15 @@ class XSdata(object):
 
     def set_total_mgxs(self, total, temperature=294., nuclide='total',
                        xs_type='macro', subdomain=None):
-        """This method allows for an openmc.mgxs.TotalXS or
-        openmc.mgxs.TransportXS to be used to set the total cross section
-        for this XSdata object.
+        """This method allows for an openmc.mgxs.TotalXS,
+        openmc.mgxs.TransportXS, or openmc.mgxs.NuTransportXS to be used to set
+        the total cross section for this XSdata object.
 
         Parameters
         ----------
-        total: openmc.mgxs.TotalXS or openmc.mgxs.TransportXS
-            MGXS Object containing the total or transport cross section
-            for the domain of interest.
+        total: openmc.mgxs.TotalXS, openmc.mgxs.TransportXS, or openmc.mgxs.NuTransportXS
+            MGXS Object containing the total, transport or nu-transport cross
+            section for the domain of interest.
         temperature : float
             Temperature (in units of Kelvin) of the provided dataset. Defaults
             to 294K
@@ -961,7 +979,8 @@ class XSdata(object):
         """
 
         check_type('total', total, (openmc.mgxs.TotalXS,
-                                    openmc.mgxs.TransportXS))
+                                    openmc.mgxs.TransportXS,
+                                    openmc.mgxs.NuTransportXS))))
         check_value('energy_groups', total.energy_groups, [self.energy_groups])
         check_value('domain_type', total.domain_type,
                     ['universe', 'cell', 'material', 'mesh'])
@@ -1153,7 +1172,8 @@ class XSdata(object):
         """
 
         check_type('prompt_nu_fission', prompt_nu_fission,
-                   openmc.mgxs.PromptNuFissionXS)
+                   (openmc.mgxs.PromptNuFissionXS,
+                    openmc.mgxs.PromptNuFissionMatrixXS))
         check_value('energy_groups', prompt_nu_fission.energy_groups,
                     [self.energy_groups])
         check_value('domain_type', prompt_nu_fission.domain_type,
@@ -1206,7 +1226,8 @@ class XSdata(object):
         """
 
         check_type('delayed_nu_fission', delayed_nu_fission,
-                   openmc.mgxs.DelayedNuFissionXS)
+                   (openmc.mgxs.DelayedNuFissionXS,
+                    openmc.mgxs.DelayedNuFissionMatrixXS))
         check_value('energy_groups', delayed_nu_fission.energy_groups,
                     [self.energy_groups])
         check_value('delayed_groups', delayed_nu_fission.num_delayed_groups,
@@ -1730,11 +1751,15 @@ class XSdata(object):
                     xs_grp.create_dataset("chi-delayed",
                                           data=self._chi_delayed[i])
 
-                if self._nu_fission[i] is None:
-                    raise ValueError('nu-fission data must be provided when '
-                                     'writing the HDF5 library')
+                if self._nu_fission[i] is None and \
+                   (self._delayed_nu_fission[i] is None or \
+                    self._prompt_nu_fission[i] is None):
+                    raise ValueError('nu-fission or prompt-nu-fission and '
+                                     'delayed-nu-fission data must be provided '
+                                     'when writing the HDF5 library')
 
-                xs_grp.create_dataset("nu-fission", data=self._nu_fission[i])
+                if self._nu_fission[i] is not None:
+                    xs_grp.create_dataset("nu-fission", data=self._nu_fission[i])
 
                 if self._prompt_nu_fission[i] is not None:
                     xs_grp.create_dataset("prompt-nu-fission",
