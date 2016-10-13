@@ -539,8 +539,6 @@ class XSdata(object):
 
         """
 
-        #check_type('chi', chi, Iterable, expected_iter_type=Real)
-
         # Get the accepted shapes for this xs
         if self.representation is 'isotropic':
             shapes = [(self.energy_groups.num_groups,)]
@@ -575,8 +573,6 @@ class XSdata(object):
 
         """
 
-        #check_type('chi-prompt', chi_prompt, Iterable, expected_iter_type=Real)
-
         # Get the accepted shapes for this xs
         if self.representation is 'isotropic':
             shapes = [(self.energy_groups.num_groups,)]
@@ -610,8 +606,6 @@ class XSdata(object):
         openmc.mgxs_library.set_chi_delayed_mgxs()
 
         """
-
-        #check_type('chi-delayed', chi_delayed, Iterable, expected_iter_type=Real)
 
         # Get the accepted shapes for this xs
         if self.representation is 'isotropic':
@@ -649,8 +643,6 @@ class XSdata(object):
         openmc.mgxs_library.set_beta_mgxs()
 
         """
-
-        #check_type('beta', beta, Iterable, expected_iter_type=Real)
 
         # Get the accepted shapes for this xs
         if self.representation is 'isotropic':
