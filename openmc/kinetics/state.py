@@ -387,7 +387,7 @@ class State(object):
         absorb = sps.diags(self.absorption.flatten(), 0)
         matrix = self.dxyz * (absorb + outscatter - inscatter)
 
-        return matrix.transpose() + stream + stream_corr
+        return matrix.transpose() + stream.transpose() + stream_corr.transpose()
 
     @property
     def chi_prompt(self):
@@ -510,6 +510,7 @@ class State(object):
         # coarse mesh
         power_ratios = mesh_powers / summed_mesh_powers
         power_ratios = np.nan_to_num(power_ratios)
+        power_ratios[power_ratios == np.inf] = 0.
 
         for i in range(self.pin_cell_mesh.dimension[0]):
             for j in range(self.pin_cell_mesh.dimension[1]):
@@ -716,88 +717,102 @@ class State(object):
         flux = self.mgxs_lib['absorption'].tallies['flux'].get_values()
         flux.shape = (nz, ny, nx, ng)
         flux = flux[:, :, :, ::-1]
-        flux_array = np.zeros((nz, ny, nx, ng, 6))
+        neighbor_flux = np.zeros((nz, ny, nx, ng, 6))
 
-        # Create a 2D array of the diffusion coefficients
-        flux_array[:  , :  , 1: , :, 0] = flux[:  , :  , :-1, :]
-        flux_array[:  , :  , :-1, :, 1] = flux[:  , :  , 1: , :]
-        flux_array[:  , 1: , :  , :, 2] = flux[:  , :-1, :  , :]
-        flux_array[:  , :-1, :  , :, 3] = flux[:  , 1: , :  , :]
-        flux_array[1: , :  , :  , :, 4] = flux[:-1, :  , :  , :]
-        flux_array[:-1, :  , :  , :, 5] = flux[1: , :  , :  , :]
+        # Save neighboring fluxes
+        neighbor_flux[:  , :  , 1: , :, 0] = flux[:  , :  , :-1, :]
+        neighbor_flux[:  , :  , :-1, :, 1] = flux[:  , :  , 1: , :]
+        neighbor_flux[:  , 1: , :  , :, 2] = flux[:  , :-1, :  , :]
+        neighbor_flux[:  , :-1, :  , :, 3] = flux[:  , 1: , :  , :]
+        neighbor_flux[1: , :  , :  , :, 4] = flux[:-1, :  , :  , :]
+        neighbor_flux[:-1, :  , :  , :, 5] = flux[1: , :  , :  , :]
 
         # Get the diffusion coefficients tally
         dc_mgxs = self.mgxs_lib['diffusion-coefficient']
         dc = dc_mgxs.get_condensed_xs(self.energy_groups).get_xs()
         dc.shape = (nz, ny, nx, ng)
-        dc_array = np.zeros((nz, ny, nx, ng, 6))
+        neighbor_dc = np.zeros((nz, ny, nx, ng, 6))
 
-        # Create a 2D array of the diffusion coefficients
-        dc_array[:  , :  , 1: , :, 0] = dc[:  , :  , :-1, :]
-        dc_array[:  , :  , :-1, :, 1] = dc[:  , :  , 1: , :]
-        dc_array[:  , 1: , :  , :, 2] = dc[:  , :-1, :  , :]
-        dc_array[:  , :-1, :  , :, 3] = dc[:  , 1: , :  , :]
-        dc_array[1: , :  , :  , :, 4] = dc[:-1, :  , :  , :]
-        dc_array[:-1, :  , :  , :, 5] = dc[1: , :  , :  , :]
+        # Save neighboring diffusion coefficients
+        neighbor_dc[:  , :  , 1: , :, 0] = dc[:  , :  , :-1, :]
+        neighbor_dc[:  , :  , :-1, :, 1] = dc[:  , :  , 1: , :]
+        neighbor_dc[:  , 1: , :  , :, 2] = dc[:  , :-1, :  , :]
+        neighbor_dc[:  , :-1, :  , :, 3] = dc[:  , 1: , :  , :]
+        neighbor_dc[1: , :  , :  , :, 4] = dc[:-1, :  , :  , :]
+        neighbor_dc[:-1, :  , :  , :, 5] = dc[1: , :  , :  , :]
 
         # Compute the surface diffusion coefficients for interior surfaces
         sdc = np.zeros((nz, ny, nx, ng, 6))
-        sdc[..., 0] = 2 * dc_array[..., 0] * dc / (dc_array[..., 0] * dx + dc * dx)
-        sdc[..., 1] = 2 * dc_array[..., 1] * dc / (dc_array[..., 1] * dx + dc * dx)
-        sdc[..., 2] = 2 * dc_array[..., 2] * dc / (dc_array[..., 2] * dy + dc * dy)
-        sdc[..., 3] = 2 * dc_array[..., 3] * dc / (dc_array[..., 3] * dy + dc * dy)
-        sdc[..., 4] = 2 * dc_array[..., 4] * dc / (dc_array[..., 4] * dz + dc * dz)
-        sdc[..., 5] = 2 * dc_array[..., 5] * dc / (dc_array[..., 5] * dz + dc * dz)
+        sdc[..., 0] = 2 * neighbor_dc[..., 0] * dc / (neighbor_dc[..., 0] * dx + dc * dx)
+        sdc[..., 1] = 2 * neighbor_dc[..., 1] * dc / (neighbor_dc[..., 1] * dx + dc * dx)
+        sdc[..., 2] = 2 * neighbor_dc[..., 2] * dc / (neighbor_dc[..., 2] * dy + dc * dy)
+        sdc[..., 3] = 2 * neighbor_dc[..., 3] * dc / (neighbor_dc[..., 3] * dy + dc * dy)
+        sdc[..., 4] = 2 * neighbor_dc[..., 4] * dc / (neighbor_dc[..., 4] * dz + dc * dz)
+        sdc[..., 5] = 2 * neighbor_dc[..., 5] * dc / (neighbor_dc[..., 5] * dz + dc * dz)
 
-        # net_current, flux_array, surf_dif_coef
+        # Convert inf sdc's to zero
+        sdc[sdc == np.inf] = 0.
+        sdc = np.nan_to_num(sdc)
+
+        # Compute the surface diffusion coefficient correction factors
         sdc_corr = np.zeros((nz, ny, nx, ng, 6))
-        sdc_corr[..., 0] = (-sdc[..., 0] * (-flux_array[..., 0] + flux) - net_current[..., 0]) / (flux_array[..., 0] + flux)
-        sdc_corr[..., 1] = (-sdc[..., 1] * ( flux_array[..., 1] - flux) - net_current[..., 1]) / (flux_array[..., 1] + flux)
-        sdc_corr[..., 2] = (-sdc[..., 2] * (-flux_array[..., 2] + flux) - net_current[..., 2]) / (flux_array[..., 2] + flux)
-        sdc_corr[..., 3] = (-sdc[..., 3] * ( flux_array[..., 3] - flux) - net_current[..., 3]) / (flux_array[..., 3] + flux)
-        sdc_corr[..., 4] = (-sdc[..., 4] * (-flux_array[..., 4] + flux) - net_current[..., 4]) / (flux_array[..., 4] + flux)
-        sdc_corr[..., 5] = (-sdc[..., 5] * ( flux_array[..., 5] - flux) - net_current[..., 5]) / (flux_array[..., 5] + flux)
+        sdc_corr[..., 0] = (-sdc[..., 0] * (-neighbor_flux[..., 0] + flux) - net_current[..., 0]) / (neighbor_flux[..., 0] + flux)
+        sdc_corr[..., 1] = (-sdc[..., 1] * ( neighbor_flux[..., 1] - flux) - net_current[..., 1]) / (neighbor_flux[..., 1] + flux)
+        sdc_corr[..., 2] = (-sdc[..., 2] * (-neighbor_flux[..., 2] + flux) - net_current[..., 2]) / (neighbor_flux[..., 2] + flux)
+        sdc_corr[..., 3] = (-sdc[..., 3] * ( neighbor_flux[..., 3] - flux) - net_current[..., 3]) / (neighbor_flux[..., 3] + flux)
+        sdc_corr[..., 4] = (-sdc[..., 4] * (-neighbor_flux[..., 4] + flux) - net_current[..., 4]) / (neighbor_flux[..., 4] + flux)
+        sdc_corr[..., 5] = (-sdc[..., 5] * ( neighbor_flux[..., 5] - flux) - net_current[..., 5]) / (neighbor_flux[..., 5] + flux)
 
-        # net_current, flux_array, surf_dif_coef
-        sdc_corr_od = np.zeros((nz, ny, nx, ng, 6))
-        sdc_corr_od[:  ,:  ,1: ,:,0] = sdc_corr[:  ,:  ,1: ,:,0]
-        sdc_corr_od[:  ,:  ,:-1,:,1] = sdc_corr[:  ,:  ,:-1,:,1]
-        sdc_corr_od[:  ,1: ,:  ,:,2] = sdc_corr[:  ,1: ,:  ,:,2]
-        sdc_corr_od[:  ,:-1,:  ,:,3] = sdc_corr[:  ,:-1,:  ,:,3]
-        sdc_corr_od[1: ,:  ,:  ,:,4] = sdc_corr[1: ,:  ,:  ,:,4]
-        sdc_corr_od[:-1,:  ,:  ,:,5] = sdc_corr[:-1,:  ,:  ,:,5]
+        # Convert inf sdc_corr's to zero
+        sdc_corr[sdc_corr == np.inf] = 0.
+        sdc_corr = np.nan_to_num(sdc_corr)
+
+        # Save a copy of the surface diffusion coefficient correction factors
+        sdc_corr_copy = np.zeros((nz, ny, nx, ng, 6))
+        sdc_corr_copy[:  ,:  ,1: ,:,0] = sdc_corr[:  ,:  ,1: ,:,0]
+        sdc_corr_copy[:  ,:  ,:-1,:,1] = sdc_corr[:  ,:  ,:-1,:,1]
+        sdc_corr_copy[:  ,1: ,:  ,:,2] = sdc_corr[:  ,1: ,:  ,:,2]
+        sdc_corr_copy[:  ,:-1,:  ,:,3] = sdc_corr[:  ,:-1,:  ,:,3]
+        sdc_corr_copy[1: ,:  ,:  ,:,4] = sdc_corr[1: ,:  ,:  ,:,4]
+        sdc_corr_copy[:-1,:  ,:  ,:,5] = sdc_corr[:-1,:  ,:  ,:,5]
 
         # Check for diagonal dominance
         if check_for_diag_dominance:
-            dd_mask = (np.abs(sdc_corr_od) > sdc)
+            dd_mask = (np.abs(sdc_corr_copy) > sdc)
             nd_mask = (dd_mask == False)
-            pos = (sdc_corr_od > 0.)
-            neg = (sdc_corr_od < 0.)
+            pos = (sdc_corr_copy > 0.)
+            neg = (sdc_corr_copy < 0.)
 
             # Correct sdc for diagonal dominance
-            sdc[:  ,:  ,1: ,:,0] = nd_mask[:  ,:  ,1: ,:,0] * sdc[:  ,:  ,1: ,:,0] + dd_mask[:  ,:  ,1: ,:,0] * (neg[:  ,:  ,1: ,:,0] * np.abs(net_current[:  ,:  ,1: ,:,0] / (2 * flux_array[:  ,:  ,1: ,:,0])) + pos[:  ,:  ,1: ,:,0] * np.abs(net_current[:  ,:  ,1: ,:,0] / (2 * flux[:  ,:  ,1: ,:])))
-            sdc[:  ,:  ,:-1,:,1] = nd_mask[:  ,:  ,:-1,:,1] * sdc[:  ,:  ,:-1,:,1] + dd_mask[:  ,:  ,:-1,:,1] * (pos[:  ,:  ,:-1,:,1] * np.abs(net_current[:  ,:  ,:-1,:,1] / (2 * flux_array[:  ,:  ,:-1,:,1])) + neg[:  ,:  ,:-1,:,1] * np.abs(net_current[:  ,:  ,:-1,:,1] / (2 * flux[:  ,:  ,:-1,:])))
-            sdc[:  ,1: ,:  ,:,2] = nd_mask[:  ,1: ,:  ,:,2] * sdc[:  ,1: ,:  ,:,2] + dd_mask[:  ,1: ,:  ,:,2] * (neg[:  ,1: ,:  ,:,2] * np.abs(net_current[:  ,1: ,:  ,:,2] / (2 * flux_array[:  ,1: ,:  ,:,2])) + pos[:  ,1: ,:  ,:,2] * np.abs(net_current[:  ,1: ,:  ,:,2] / (2 * flux[:  ,1: ,:  ,:])))
-            sdc[:  ,:-1,:  ,:,3] = nd_mask[:  ,:-1,:  ,:,3] * sdc[:  ,:-1,:  ,:,3] + dd_mask[:  ,:-1,:  ,:,3] * (pos[:  ,:-1,:  ,:,3] * np.abs(net_current[:  ,:-1,:  ,:,3] / (2 * flux_array[:  ,:-1,:  ,:,3])) + neg[:  ,:-1,:  ,:,3] * np.abs(net_current[:  ,:-1,:  ,:,3] / (2 * flux[:  ,:-1,:  ,:])))
-            sdc[1: ,:  ,:  ,:,4] = nd_mask[1: ,:  ,:  ,:,4] * sdc[1: ,:  ,:  ,:,4] + dd_mask[1: ,:  ,:  ,:,4] * (neg[1: ,:  ,:  ,:,4] * np.abs(net_current[1: ,:  ,:  ,:,4] / (2 * flux_array[1: ,:  ,:  ,:,4])) + pos[1: ,:  ,:  ,:,4] * np.abs(net_current[1: ,:  ,:  ,:,4] / (2 * flux[1: ,:  ,:  ,:])))
-            sdc[:-1,:  ,:  ,:,5] = nd_mask[:-1,:  ,:  ,:,5] * sdc[:-1,:  ,:  ,:,5] + dd_mask[:-1,:  ,:  ,:,5] * (pos[:-1,:  ,:  ,:,5] * np.abs(net_current[:-1,:  ,:  ,:,5] / (2 * flux_array[:-1,:  ,:  ,:,5])) + neg[:-1,:  ,:  ,:,5] * np.abs(net_current[:-1,:  ,:  ,:,5] / (2 * flux[:-1,:  ,:  ,:])))
+            sdc[:  ,:  ,1: ,:,0] = nd_mask[:  ,:  ,1: ,:,0] * sdc[:  ,:  ,1: ,:,0] + dd_mask[:  ,:  ,1: ,:,0] * (neg[:  ,:  ,1: ,:,0] * np.abs(net_current[:  ,:  ,1: ,:,0] / (2 * neighbor_flux[:  ,:  ,1: ,:,0])) + pos[:  ,:  ,1: ,:,0] * np.abs(net_current[:  ,:  ,1: ,:,0] / (2 * flux[:  ,:  ,1: ,:])))
+            sdc[:  ,:  ,:-1,:,1] = nd_mask[:  ,:  ,:-1,:,1] * sdc[:  ,:  ,:-1,:,1] + dd_mask[:  ,:  ,:-1,:,1] * (pos[:  ,:  ,:-1,:,1] * np.abs(net_current[:  ,:  ,:-1,:,1] / (2 * neighbor_flux[:  ,:  ,:-1,:,1])) + neg[:  ,:  ,:-1,:,1] * np.abs(net_current[:  ,:  ,:-1,:,1] / (2 * flux[:  ,:  ,:-1,:])))
+            sdc[:  ,1: ,:  ,:,2] = nd_mask[:  ,1: ,:  ,:,2] * sdc[:  ,1: ,:  ,:,2] + dd_mask[:  ,1: ,:  ,:,2] * (neg[:  ,1: ,:  ,:,2] * np.abs(net_current[:  ,1: ,:  ,:,2] / (2 * neighbor_flux[:  ,1: ,:  ,:,2])) + pos[:  ,1: ,:  ,:,2] * np.abs(net_current[:  ,1: ,:  ,:,2] / (2 * flux[:  ,1: ,:  ,:])))
+            sdc[:  ,:-1,:  ,:,3] = nd_mask[:  ,:-1,:  ,:,3] * sdc[:  ,:-1,:  ,:,3] + dd_mask[:  ,:-1,:  ,:,3] * (pos[:  ,:-1,:  ,:,3] * np.abs(net_current[:  ,:-1,:  ,:,3] / (2 * neighbor_flux[:  ,:-1,:  ,:,3])) + neg[:  ,:-1,:  ,:,3] * np.abs(net_current[:  ,:-1,:  ,:,3] / (2 * flux[:  ,:-1,:  ,:])))
+            sdc[1: ,:  ,:  ,:,4] = nd_mask[1: ,:  ,:  ,:,4] * sdc[1: ,:  ,:  ,:,4] + dd_mask[1: ,:  ,:  ,:,4] * (neg[1: ,:  ,:  ,:,4] * np.abs(net_current[1: ,:  ,:  ,:,4] / (2 * neighbor_flux[1: ,:  ,:  ,:,4])) + pos[1: ,:  ,:  ,:,4] * np.abs(net_current[1: ,:  ,:  ,:,4] / (2 * flux[1: ,:  ,:  ,:])))
+            sdc[:-1,:  ,:  ,:,5] = nd_mask[:-1,:  ,:  ,:,5] * sdc[:-1,:  ,:  ,:,5] + dd_mask[:-1,:  ,:  ,:,5] * (pos[:-1,:  ,:  ,:,5] * np.abs(net_current[:-1,:  ,:  ,:,5] / (2 * neighbor_flux[:-1,:  ,:  ,:,5])) + neg[:-1,:  ,:  ,:,5] * np.abs(net_current[:-1,:  ,:  ,:,5] / (2 * flux[:-1,:  ,:  ,:])))
 
             # Correct sdc correct for diagonal dominance
-            sdc_corr_od = nd_mask * sdc_corr_od + dd_mask * (pos * sdc - neg * sdc)
+            sdc_corr_copy = nd_mask * sdc_corr_copy + dd_mask * (pos * sdc - neg * sdc)
+
+        # Convert inf sdc_corr's to zero
+        sdc_corr = sdc_corr_copy
+        sdc_corr[sdc_corr == np.inf] = 0.
+        sdc_corr = np.nan_to_num(sdc_corr)
+        sdc[sdc == np.inf] = 0.
+        sdc = np.nan_to_num(sdc)
 
         # Multiply by the surface area
-        sdc[..., 0:2] *= dy * dz
-        sdc[..., 2:4] *= dx * dz
-        sdc[..., 4:6] *= dx * dy
+        sdc[..., 0:2]      *= dy * dz
+        sdc[..., 2:4]      *= dx * dz
+        sdc[..., 4:6]      *= dx * dy
         sdc_corr[..., 0:2] *= dy * dz
         sdc_corr[..., 2:4] *= dx * dz
         sdc_corr[..., 4:6] *= dx * dy
 
-        # Reshape the diffusion coefficient array
-        flux.shape        = (nx*ny*nz, ng)
-        sdc.shape         = (nx*ny*nz*ng, 6)
-        sdc_corr.shape    = (nx*ny*nz*ng, 6)
-        sdc_corr_od.shape = (nx*ny*nz*ng, 6)
+        # Reshape the diffusion coefficient array 
+        flux.shape     = (nx*ny*nz, ng)
+        sdc.shape      = (nx*ny*nz*ng, 6)
+        sdc_corr.shape = (nx*ny*nz*ng, 6)
 
         # Set the diagonal
         sdc_diag      = sdc.sum(axis=1)
@@ -810,31 +825,33 @@ class State(object):
         if nx > 1:
             sdc_data.append(-sdc[ng: , 0])
             sdc_data.append(-sdc[:-ng, 1])
-            sdc_corr_data.append( sdc_corr_od[ng: , 0])
-            sdc_corr_data.append(-sdc_corr_od[:-ng, 1])
+            sdc_corr_data.append( sdc_corr[ng: , 0])
+            sdc_corr_data.append(-sdc_corr[:-ng, 1])
             diags.append(-ng)
             diags.append(ng)
         if ny > 1:
             sdc_data.append(-sdc[nx*ng: , 2])
             sdc_data.append(-sdc[:-nx*ng, 3])
-            sdc_corr_data.append( sdc_corr_od[nx*ng: , 2])
-            sdc_corr_data.append(-sdc_corr_od[:-nx*ng, 3])
+            sdc_corr_data.append( sdc_corr[nx*ng: , 2])
+            sdc_corr_data.append(-sdc_corr[:-nx*ng, 3])
             diags.append(-nx*ng)
             diags.append(nx*ng)
         if nz > 1:
             sdc_data.append(-sdc[nx*ny*ng: , 4])
             sdc_data.append(-sdc[:-nx*ny*ng, 5])
-            sdc_corr_data.append( sdc_corr_od[nx*ny*ng: , 4])
-            sdc_corr_data.append(-sdc_corr_od[:-nx*ny*ng, 5])
+            sdc_corr_data.append( sdc_corr[nx*ny*ng: , 4])
+            sdc_corr_data.append(-sdc_corr[:-nx*ny*ng, 5])
             diags.append(-nx*ny*ng)
             diags.append(nx*ny*ng)
-
 
         # Form a matrix of the surface diffusion coefficients corrections
         sdc_data = np.nan_to_num(sdc_data)
         sdc_corr_data = np.nan_to_num(sdc_corr_data)
         sdc_matrix = sps.diags(sdc_data, diags)
         sdc_corr_matrix = sps.diags(sdc_corr_data, diags)
+
+        # TEST: Zero sdc matrix to just get diffusion matrix
+        #sdc_corr_matrix *= 0.0
 
         return sdc_matrix, sdc_corr_matrix
 

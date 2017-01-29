@@ -86,6 +86,10 @@ def spatial_plot(variable, log_file, directory='.', plane='xy', plane_num=0,
         data.shape = (domains[2], domains[1], domains[0], num_groups)
         spatial_data[i] = data
 
+    print(spatial_data)
+    print(np.max(spatial_data))
+    print(np.min(spatial_data))
+
     # Get the limits used to scale all the figures
     data_lim = [0., np.finfo(np.float).max]
     for i,step in enumerate(time_steps):
@@ -98,6 +102,8 @@ def spatial_plot(variable, log_file, directory='.', plane='xy', plane_num=0,
         elif plane == 'yz':
             data_lim[0] = np.max([data_lim[0], np.min(spatial_data[i, :, :, plane_num, group])])
             data_lim[1] = np.min([data_lim[1], np.max(spatial_data[i, :, :, plane_num, group])])
+
+    print(data_lim)
 
     # Plot the spatial data
     for i,step in enumerate(time_steps):
