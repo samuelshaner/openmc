@@ -16,6 +16,8 @@ import openmc.kinetics
 from openmc.kinetics.clock import TIME_POINTS
 import h5py
 
+import openrk as rk
+
 if sys.version_info[0] >= 3:
     basestring = str
 
@@ -286,13 +288,13 @@ class State(object):
 
     @flux.setter
     def flux(self, flux):
-        self._flux = copy.deepcopy(flux)
-        self._flux.shape = (self.nxyz, self.ng)
+        self._flux = flux.copy()
+        self._flux.reshape([self.nxyz, self.ng])
 
     @adjoint_flux.setter
     def adjoint_flux(self, adjoint_flux):
-        self._adjoint_flux = copy.deepcopy(adjoint_flux)
-        self._adjoint_flux.shape = (self.nxyz, self.ng)
+        self._adjoint_flux = adjoint_flux.copy()
+        self._adjoint_flux.reshape([self.nxyz, self.ng])
 
     @precursors.setter
     def precursors(self, precursors):
@@ -320,133 +322,147 @@ class State(object):
 
     @property
     def reactivity(self):
-        production = self.production_matrix * self.flux.flatten()
-        destruction = self.destruction_matrix * self.flux.flatten()
-        balance = production - destruction
-        balance = balance * self.adjoint_flux.flatten()
-        production = production * self.adjoint_flux.flatten()
+        production = rk.matrixMultiplication(self.production_matrix, self.flux.flatten())
+        destruction = rk.matrixMultiplication(self.destruction_matrix, self.flux.flatten())
+        balance = production.subtract(destruction)
+        balance = balance.multiply(self.adjoint_flux.flatten())
+        production = production.multiply(self.adjoint_flux.flatten())
         return balance.sum() / production.sum()
-
-    def get_diagonal_matrix(self, array):
-
-        ni, ng, ng = array.shape
-        diags = np.zeros((ng*2-1, ni * ng))
-        ndiag = [0] + [g for g in range(1,ng)] + [-g for g in range(1,ng)]
-
-        for i in range(ni):
-            for r in range(ng):
-                for c in range(ng):
-                    diags[c-r][i*ng+r] = array[i, r, c]
-
-        diags2 = [diags[0]]
-        for g in range(1,ng):
-            diags2.append(diags[g][:-g])
-        for g in range(1,ng):
-            diags2.append(diags[-g][g:])
-
-        return sps.diags(diags2, ndiag)
 
     @property
     def beta_eff(self):
-        flux = np.tile(self.flux.flatten(), self.nd)
-        adjoint_flux = np.tile(self.adjoint_flux.flatten(), self.nd)
+        flux = self.flux.flatten().tile(self.nd)
+        adjoint_flux = self.adjoint_flux.flatten().tile(self.nd)
         delayed_production = self.delayed_production
-        delayed_production.shape = (self.nxyz * self.nd, self.ng, self.ng)
+        delayed_production.reshape([self.nxyz * self.nd, self.ng, self.ng])
 
-        delayed_production = self.get_diagonal_matrix(delayed_production)
-        delayed_production *= self.dxyz / self.k_crit
+        delayed_production_matrix = rk.Matrix(self.nxyz * self.nd)
+        delayed_production_matrix.blockDiags(delayed_production, self.ng)
+        delayed_production_matrix.scaleByValue(self.dxyz / self.k_crit)
 
-        delayed_production = delayed_production * flux
-        delayed_production = delayed_production * adjoint_flux
-        delayed_production.shape = (self.nxyz, self.nd, self.ng)
-        delayed_production = delayed_production.sum(axis=2).sum(axis=0)
+        delayed_production = rk.matrixMultiplication(delayed_production_matrix, flux)
+        delayed_production = delayed_production.multiply(adjoint_flux)
+        delayed_production.reshape([self.nxyz, self.nd, self.ng])
+        delayed_production = delayed_production.sumAxis(2).sumAxis(0)
 
-        production = self.production_matrix * self.flux.flatten()
-        production = production * self.adjoint_flux.flatten()
-        production = np.tile(production, self.nd)
-        production.shape = (self.nxyz, self.nd, self.ng)
-        production = production.sum(axis=2).sum(axis=0)
+        production = rk.matrixMultiplication(self.production_matrix, self.flux.flatten())
+        production = production.multiply(self.adjoint_flux.flatten())
+        production = production.tile(self.nd)
+        production.reshape([self.nxyz, self.nd, self.ng])
+        production = production.sumAxis(2).sumAxis(0)
 
-        return (delayed_production / production).sum()
+        return delayed_production.divide(production).sum()
 
     @property
     def pnl(self):
-        inv_velocity = self.dxyz * self.adjoint_flux * self.inverse_velocity * self.flux
-        production = self.production_matrix * self.flux.flatten()
-        production = production * self.adjoint_flux.flatten()
+        inv_velocity = self.inverse_velocity
+        inv_velocity.scaleByValue(self.dxyz)
+        inv_velocity = inv_velocity.multiply(self.adjoint_flux).multiply(self.flux)
+        production = rk.matrixMultiplication(self.production_matrix, self.flux.flatten())
+        production = production.multiply(self.adjoint_flux.flatten())
         return inv_velocity.sum() / production.sum()
 
     @property
     def inscatter(self):
         inscatter = self.mgxs_lib['nu-scatter matrix'].get_xs(row_column='outin')
-        inscatter.shape = (self.nxyz, self.ngp, self.ng)
-        return inscatter
+        inscatter_array = rk.Array([self.nxyz, self.ngp, self.ng])
+        inscatter_array.setValues(inscatter)
+        return inscatter_array
 
     @property
     def outscatter(self):
-        return self.inscatter.sum(axis=1)
+        return self.inscatter.sumAxis(1)
 
     @property
     def absorption(self):
         absorption = self.mgxs_lib['absorption'].get_xs()
-        absorption.shape = (self.nxyz, self.ng)
-        return absorption
+        absorption_array = rk.Array([self.nxyz, self.ng])
+        absorption_array.setValues(absorption)
+        return absorption_array
 
     @property
     def destruction_matrix(self):
         stream, stream_corr = self.compute_surface_dif_coefs()
-        inscatter = self.get_diagonal_matrix(self.inscatter)
-        outscatter = sps.diags(self.outscatter.flatten(), 0)
-        absorb = sps.diags(self.absorption.flatten(), 0)
 
-        return self.dxyz * (absorb + outscatter - inscatter) + \
-            stream + stream_corr
+        inscatter_matrix = rk.Matrix(self.nxyz * self.ng)
+        inscatter_matrix.blockDiags(self.inscatter, self.ng)
+
+        outscatter_matrix = rk.Matrix(self.nxyz * self.ng)
+        outscatter_matrix.setDiags([0])
+        outscatter_matrix.diags(self.outscatter.flatten())
+
+        absorb_matrix = rk.Matrix(self.nxyz * self.ng)
+        absorb_matrix.setDiags([0])
+        absorb_matrix.diags(self.absorption.flatten())
+
+        destr_matrix = absorb
+        destr_matrix.add(outscatter)
+        destr_matrix.subtract(inscatter)
+        destr_matrix.scaleByValue(self.dxyz)
+        destr_matrix.add(stream)
+        destr_matrix.add(stream_corr)
+
+        return destr_matrix
 
     @property
     def adjoint_destruction_matrix(self):
-        stream, stream_corr = self.compute_surface_dif_coefs()
-        inscatter = self.get_diagonal_matrix(self.inscatter)
-        outscatter = sps.diags(self.outscatter.flatten(), 0)
-        absorb = sps.diags(self.absorption.flatten(), 0)
-        matrix = self.dxyz * (absorb + outscatter - inscatter)
-
-        return matrix.transpose() + stream.transpose() + stream_corr.transpose()
+        adj_destr_matrix = self.destruction_matrix
+        adj_destr_matrix.transpose()
+        return adj_destr_matrix
 
     @property
     def chi_prompt(self):
         chi_prompt = self.mgxs_lib['chi-prompt'].get_xs()
-        chi_prompt.shape = (self.nxyz, self.ngp)
-        return chi_prompt
+        chi_prompt_array = rk.Array([self.nxyz, self.ngp])
+        chi_prompt_array.setValues(chi_prompt)
+        return chi_prompt_array
 
     @property
     def prompt_nu_fission(self):
         prompt_nu_fission = self.mgxs_lib['prompt-nu-fission'].get_xs()
-        prompt_nu_fission.shape = (self.nxyz, self.ng)
-        return prompt_nu_fission
+        prompt_nu_fission_array = rk.Array([self.nxyz, self.ng])
+        prompt_nu_fission_array.setValues(prompt_nu_fission)
+        return prompt_nu_fission_array
 
     @property
     def chi_delayed(self):
         chi_delayed = self.mgxs_lib['chi-delayed'].get_xs()
-        if not self.chi_delayed_by_mesh:
-            chi_delayed = np.tile(chi_delayed, self.nxyz)
-        if not self.chi_delayed_by_delayed_group:
-            chi_delayed = np.tile(chi_delayed, self.nd)
-        chi_delayed.shape = (self.nxyz, self.nd, self.ngp)
-        return chi_delayed
+
+        if not self.chi_delayed_by_mesh and not self.chi_delayed_by_delayed_group:
+            chi_delayed_array = rk.Array([self.ngp])
+            chi_delayed_array.setValues(chi_delayed)
+            chi_delayed_array.tile(self.nd)
+            chi_delayed_array.tile(self.nxyz)
+        elif not self.chi_delayed_by_mesh:
+            chi_delayed_array = rk.Array([self.nd, self.ngp])
+            chi_delayed_array.setValues(chi_delayed)
+            chi_delayed_array.tile(self.nxyz)
+        elif not self.chi_delayed_by_delayed_group:
+            chi_delayed_array = rk.Array([self.nxyz, self.ngp])
+            chi_delayed_array.setValues(chi_delayed)
+            chi_delayed_array.tile(self.nd)
+        else:
+            chi_delayed_array = rk.Array([self.nxyz, self.nd, self.ngp])
+            chi_delayed_array.setValues(chi_delayed)
+        chi_delayed_array.reshape([self.nxyz, self.nd, self.ngp])
+        return chi_delayed_array
 
     @property
     def delayed_nu_fission(self):
         delayed_nu_fission = self.mgxs_lib['delayed-nu-fission'].get_xs()
-        delayed_nu_fission.shape = (self.nxyz, self.nd, self.ng)
-        return delayed_nu_fission
+        delayed_nu_fission_array = rk.Array([self.nxyz, self.nd, self.ng])
+        delayed_nu_fission_array.setValues(delayed_nu_fission)
+        return delayed_nu_fission_array
 
     @property
     def delayed_production(self):
-        chi_delayed = np.repeat(self.chi_delayed, self.ng)
-        chi_delayed.shape = (self.nxyz, self.nd, self.ngp, self.ng)
-        delayed_nu_fission = np.tile(self.delayed_nu_fission, self.ngp)
-        delayed_nu_fission.shape = (self.nxyz, self.nd, self.ngp, self.ng)
-        return (chi_delayed * delayed_nu_fission)
+        chi_delayed = self.chi_delayed
+        chi_delayed.repeat(self.ng)
+        chi_delayed.reshape([self.nxyz, self.nd, self.ngp, self.ng])
+        delayed_nu_fission = self.delayed_nu_fission
+        delayed_nu_fission.tile(self.ngp)
+        delayed_nu_fission.reshape([self.nxyz, self.nd, self.ngp, self.ng])
+        return chi_delayed.multiply(delayed_nu_fission)
 
     @property
     def delayed_production_matrix(self):
