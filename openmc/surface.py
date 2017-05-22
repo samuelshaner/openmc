@@ -2092,12 +2092,11 @@ def get_hexagonal_prism(edge_length=1., orientation='y', origin=(0., 0.),
     """
 
     l = edge_length
-    x = origin[0]
-    y = origin[1]
+    x, y = origin
 
     if orientation == 'y':
         right = XPlane(x0=x + sqrt(3.)/2*l, boundary_type=boundary_type)
-        left  = XPlane(x0=x - sqrt(3.)/2*l, boundary_type=boundary_type)
+        left = XPlane(x0=x - sqrt(3.)/2*l, boundary_type=boundary_type)
         c = sqrt(3.)/3.
 
         # y = -x/sqrt(3) + a
@@ -2121,7 +2120,7 @@ def get_hexagonal_prism(edge_length=1., orientation='y', origin=(0., 0.),
             lower_right.periodic_surface = upper_left
 
     elif orientation == 'x':
-        top    = YPlane(y0=y + sqrt(3.)/2*l, boundary_type=boundary_type)
+        top = YPlane(y0=y + sqrt(3.)/2*l, boundary_type=boundary_type)
         bottom = YPlane(y0=y - sqrt(3.)/2*l, boundary_type=boundary_type)
         c = sqrt(3.)
 
@@ -2165,15 +2164,15 @@ def get_hexagonal_prism(edge_length=1., orientation='y', origin=(0., 0.),
             x_min_y_max_in = cyl1(name='x min y max in', x0=x+t/2, y0=y-c*t)
             x_max_y_min_in = cyl1(name='x max y min in', x0=x-t/2, y0=y+c*t)
             x_max_y_max_in = cyl1(name='x max y max in', x0=x+t/2, y0=y+c*t)
-            x_min_in       = cyl1(name='x min in'      , x0=x-t  , y0=y)
-            x_max_in       = cyl1(name='x max in'      , x0=x+t  , y0=y)
+            x_min_in = cyl1(name='x min in', x0=x-t, y0=y)
+            x_max_in = cyl1(name='x max in', x0=x+t, y0=y)
 
             x_min_y_min_out = cyl2(name='x min y min out', x0=x-l/2, y0=y-c*l)
             x_min_y_max_out = cyl2(name='x min y max out', x0=x+l/2, y0=y-c*l)
             x_max_y_min_out = cyl2(name='x max y min out', x0=x-l/2, y0=y+c*l)
             x_max_y_max_out = cyl2(name='x max y max out', x0=x+l/2, y0=y+c*l)
-            x_min_out       = cyl2(name='x min out'      , x0=x-l  , y0=y)
-            x_max_out       = cyl2(name='x max out'      , x0=x+l  , y0=y)
+            x_min_out = cyl2(name='x min out', x0=x-l, y0=y)
+            x_max_out = cyl2(name='x max out', x0=x+l, y0=y)
 
             corners = (+x_min_y_min_in & -x_min_y_min_out |
                        +x_min_y_max_in & -x_min_y_max_out |
@@ -2187,15 +2186,15 @@ def get_hexagonal_prism(edge_length=1., orientation='y', origin=(0., 0.),
             x_min_y_max_in = cyl1(name='x min y max in', x0=x-c*t, y0=y+t/2)
             x_max_y_min_in = cyl1(name='x max y min in', x0=x+c*t, y0=y-t/2)
             x_max_y_max_in = cyl1(name='x max y max in', x0=x+c*t, y0=y+t/2)
-            y_min_in       = cyl1(name='y min in'      , x0=x    , y0=y-t)
-            y_max_in       = cyl1(name='y max in'      , x0=x    , y0=y+t)
+            y_min_in = cyl1(name='y min in', x0=x, y0=y-t)
+            y_max_in = cyl1(name='y max in', x0=x, y0=y+t)
 
             x_min_y_min_out = cyl2(name='x min y min out', x0=x-c*l, y0=y-l/2)
             x_min_y_max_out = cyl2(name='x min y max out', x0=x-c*l, y0=y+l/2)
             x_max_y_min_out = cyl2(name='x max y min out', x0=x+c*l, y0=y-l/2)
             x_max_y_max_out = cyl2(name='x max y max out', x0=x+c*l, y0=y+l/2)
-            y_min_out       = cyl2(name='y min out'      , x0=x      , y0=y-l)
-            y_max_out       = cyl2(name='y max out'      , x0=x      , y0=y+l)
+            y_min_out = cyl2(name='y min out', x0=x, y0=y-l)
+            y_max_out = cyl2(name='y max out', x0=x, y0=y+l)
 
             corners = (+x_min_y_min_in & -x_min_y_min_out |
                        +x_min_y_max_in & -x_min_y_max_out |
