@@ -52,6 +52,9 @@ class Universe(object):
     bounding_box : 2-tuple of numpy.array
         Lower-left and upper-right coordinates of an axis-aligned bounding box
         of the universe.
+    channelized : bool
+        Bool indicating whether this universe has been channelized for TH
+        feedback.
 
     """
 
@@ -61,6 +64,7 @@ class Universe(object):
         self.name = name
         self._volume = None
         self._atoms = {}
+        self._channelized = False
 
         # Keys     - Cell IDs
         # Values - Cells
@@ -78,6 +82,8 @@ class Universe(object):
             return False
         elif dict.__ne__(self.cells, other.cells):
             return False
+        elif self.channelized != other.channelized:
+            return False
         else:
             return True
 
@@ -91,6 +97,7 @@ class Universe(object):
         string = 'Universe\n'
         string += '{0: <16}{1}{2}\n'.format('\tID', '=\t', self._id)
         string += '{0: <16}{1}{2}\n'.format('\tName', '=\t', self._name)
+        string += '{0: <16}{1}{2}\n'.format('\tChannelized', '=\t', self._channelized)
         string += '{0: <16}{1}{2}\n'.format('\tCells', '=\t',
                                             list(self._cells.keys()))
         return string
@@ -110,6 +117,10 @@ class Universe(object):
     @property
     def volume(self):
         return self._volume
+
+    @property
+    def channelized(self):
+        return self._channelized
 
     @property
     def bounding_box(self):
@@ -145,6 +156,11 @@ class Universe(object):
         if volume is not None:
             cv.check_type('universe volume', volume, Real)
         self._volume = volume
+
+    @channelized.setter
+    def channelized(self, channelized):
+        cv.check_type('channelized', channelized, bool)
+        self._channelized = channelized
 
     @classmethod
     def from_hdf5(cls, group, cells):
@@ -225,7 +241,7 @@ class Universe(object):
 
     def plot(self, origin=(0., 0., 0.), width=(1., 1.), pixels=(200, 200),
              basis='xy', color_by='cell', colors=None, filename=None, seed=None,
-             **kwargs):
+             geometry=None, **kwargs):
         """Display a slice plot of the universe.
 
         Parameters
@@ -238,7 +254,7 @@ class Universe(object):
             Number of pixels to use in each basis direction
         basis : {'xy', 'xz', 'yz'}
             The basis directions for the plot
-        color_by : {'cell', 'material'}
+        color_by : {'cell', 'material', 'channel'}
             Indicate whether the plot should be colored by cell or by material
         colors : dict
             Assigns colors to specific materials or cells. Keys are instances of
@@ -265,6 +281,11 @@ class Universe(object):
 
         """
         import matplotlib.pyplot as plt
+
+        if color_by == 'channel' and geometry is None:
+            msg = 'The geometry must be input if the plot is colored ' \
+                  'by channel'
+            raise ValueError(msg)
 
         # Seed the random number generator
         if seed is not None:
@@ -332,6 +353,34 @@ class Universe(object):
                                 obj = path[-1].fill
                             else:
                                 continue
+                        elif color_by == 'channel':
+
+                            # Convert path to string
+                            cell = path[-1]
+
+                            # Get cell, cell instance pair
+                            path_str = ''
+                            for p in path:
+                                if isinstance(p, openmc.Universe):
+                                    path_str += 'u{}->'.format(p.id)
+                                elif isinstance(p, openmc.Cell):
+                                    path_str += 'c{}->'.format(p.id)
+                                else:
+                                    if len(p[1]) == 2:
+                                        path_str += 'l{}({},{})->'.format(
+                                            p[0].id, int(p[1][0]), int(p[1][1]))
+                                    else:
+                                        path_str += 'l{}({},{},{})->'.format(
+                                            p[0].id, int(p[1][0]), int(p[1][1]), int(p[1][2]))
+
+                            path_str = path_str[:-2]
+                            instance = geometry.get_instances(path_str)
+
+                            # Find cell, cell instance pair in coolant channels
+                            obj = geometry.find_coolant_channel(cell, instance)
+                            if obj is not None:
+                                print(obj.id)
+
                     except AttributeError:
                         continue
                     if obj not in colors:
@@ -607,3 +656,31 @@ class Universe(object):
             cell._num_instances += 1
             if not instances_only:
                 cell._paths.append(cell_path)
+
+    def create_coolant_channels(self, geometry, path):
+        """Create the coolant channels for all cells in the universe
+
+        Parameters
+        ----------
+        geometry : openmc.Geometry
+            The geometry
+        path : str
+            The path to this current universe
+
+        Returns
+        -------
+        Iterable of Iterable of Iterable of openmc.CoolantChannel
+            3D array of CoolantChannel objects that make up the geometry
+
+        """
+
+        # Recursively loop over all the cells and get their coolant channels
+        all_channels = []
+        for cell in self.cells.values():
+            new_path = '{}u{}->'.format(path, self.id)
+            channels = cell.create_coolant_channels(geometry, new_path)
+
+            for channel in channels:
+                all_channels.append(channel)
+
+        return all_channels

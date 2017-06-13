@@ -39,7 +39,10 @@ class Lattice(object):
     universes : Iterable of Iterable of openmc.Universe
         A two- or three-dimensional list/array of universes filling each element
         of the lattice
-
+    channelizeable : bool
+        A boolean akin to the fissionable property of materials indicating
+        whether it is possible to form channels with this lattice. Default is
+        False.
     """
     def __init__(self, lattice_id=None, name=''):
         # Initialize Lattice class attributes
@@ -48,6 +51,7 @@ class Lattice(object):
         self._pitch = None
         self._outer = None
         self._universes = None
+        self._channelizeable = False
 
     def __eq__(self, other):
         if not isinstance(other, Lattice):
@@ -55,6 +59,8 @@ class Lattice(object):
         elif self.id != other.id:
             return False
         elif self.name != other.name:
+            return False
+        elif self.channelizeable != other.channelizeable:
             return False
         elif np.any(self.pitch != other.pitch):
             return False
@@ -88,6 +94,10 @@ class Lattice(object):
     def universes(self):
         return self._universes
 
+    @property
+    def channelizeable(self):
+        return self._channelizeable
+
     @id.setter
     def id(self, lattice_id):
         if lattice_id is None:
@@ -105,6 +115,11 @@ class Lattice(object):
             self._name = name
         else:
             self._name = ''
+
+    @channelizeable.setter
+    def channelizeable(self, channelizeable):
+        cv.check_type('channelizeable', channelizeable, bool)
+        self._channelizeable = channelizeable
 
     @outer.setter
     def outer(self, outer):
@@ -807,6 +822,142 @@ class RectLattice(Lattice):
 
         # Append the XML subelement for this Lattice to the XML element
         xml_element.append(lattice_subelement)
+
+    def discretize_coolant_channels(self):
+        """Create the array of coolant channels that make up the lattice"""
+
+        # Skip this lattice if it is not channelizeable or if channels have
+        # already been created
+        if not self.channelizeable:
+            return
+
+        # Coolant channels can only be created if the universes array has been
+        # set
+        if self.universes is None:
+            msg = 'Unable to create coolant channels since the universes array'\
+                  ' has not been set'
+            raise ValueError(msg)
+
+        dims = len(np.array(self.universes).shape)
+        if dims == 3:
+            msg = 'Unable to create coolant channels for a geometry that ' \
+                  'contains a 3D lattice'
+            raise ValueError(msg)
+
+        # Create a set of the universes array
+        univs = set(self.universes.flatten())
+
+        # Discretize each unique universe
+        for univ in univs:
+
+            # Skip if universe has already been channelized
+            if univ.channelized:
+                return
+
+            # Create a new cell to fill the entire universe
+            master_cell = openmc.Cell()
+
+            # Create a 2x2 lattice to fill the cell
+            quad_lattice = openmc.RectLattice()
+            master_cell.fill = quad_lattice
+            quad_univs = []
+
+            # Create sub universe and add all the univ's cells to it
+            sub_univ = openmc.Universe()
+            sub_univ.add_cells(univ.cells.values())
+
+            # Loop over quadrants of lattice cell
+            for quad in range(4):
+
+                # Create new universes to fill the lattice
+                quad_univ = openmc.Universe()
+                quad_univs.append(quad_univ)
+
+                # Compute signs for translating to the different quadrants
+                x_sign = -(2 * (quad % 2) - 1)
+                y_sign = (2 * (quad // 2 % 2) - 1)
+
+                # Create translated cells to fill the universes
+                quad_cell = openmc.Cell()
+                trans = (x_sign*self.pitch[0]/4., y_sign*self.pitch[1]/4., 0.)
+                quad_cell.translation = trans
+                quad_univ.add_cell(quad_cell)
+                quad_cell.fill = sub_univ
+
+            # Set quad_lattice info
+            quad_lattice.pitch = np.array(self.pitch[:2])/2.
+            quad_lattice.lower_left = -np.array(self.pitch[:2])/2.
+            quad_lattice.universes = np.array(quad_univs).reshape((2,2))
+
+            # Remove all the cells from this universe
+            univ.clear_cells()
+
+            # Add the new cell to the universe
+            univ.add_cell(master_cell)
+
+            # Indicate that this universe has been channelized
+            univ.channelized = True
+
+    def create_coolant_channels(self, geometry, path):
+        """Create the coolant channels for the lattice
+
+        Parameters
+        ----------
+        geometry : openmc.Geometry
+            The geometry
+        path : str
+            The path to this current cell
+
+        Returns
+        -------
+        Iterable of Iterable of Iterable of openmc.CoolantChannel
+            3D array of CoolantChannel objects that make up the lattice
+
+        """
+
+        if self.channelizeable:
+
+            dims = self.universes.shape
+
+            channels = []
+            for y in range(dims[0] + 1):
+                channels.append([])
+                for x in range(dims[1] + 1):
+                    channels[y].append(openmc.CoolantChannel())
+
+            for y in range(dims[0]):
+                for x,univ in enumerate(self.universes[::-1][y]):
+                    cell = univ.cells.values()[0]
+                    lat = cell.fill
+                    new_path = '{}l{}({},{})->u{}->c{}->l{}'\
+                               .format(path, self.id, x, y, univ.id, cell.id, lat.id)
+
+                    for y1 in range(2):
+                        for x1,sub_univ in enumerate(lat.universes[::-1][y1]):
+                            sub_cell = sub_univ.cells.values()[0]
+                            sub_sub_univ = sub_cell.fill
+                            for cell in sub_sub_univ.cells.values():
+                                sub_path = '{}({},{})->u{}->c{}->u{}->c{}'.\
+                                           format(new_path, x1, y1, sub_univ.id,
+                                                  sub_cell.id, sub_sub_univ.id,
+                                                  cell.id)
+                                offset = geometry.get_instances(sub_path)
+                                channel = channels[y+y1][x+x1]
+                                channel.cell_offsets[cell] = offset
+
+            return [channels]
+
+        else:
+
+            all_channels = []
+            dims = self.universes.shape
+            for y in range(dims[0]):
+                for x,univ in enumerate(self.universes[::-1][y]):
+                    channels = univ.create_coolant_channels()
+                    for channel in channels:
+                        all_channels.append(channel)
+
+            return all_channels
 
 
 class HexLattice(Lattice):

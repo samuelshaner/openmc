@@ -32,18 +32,25 @@ class Geometry(object):
     bounding_box : 2-tuple of numpy.array
         Lower-left and upper-right coordinates of an axis-aligned bounding box
         of the universe.
+    coolant_channels : Iterable of Iterable of Iterable of openmc.CoolantChannel
+        3D array of CoolantChannel objects.
 
     """
 
     def __init__(self, root_universe=None):
         self._root_universe = None
         self._offsets = {}
+        self._coolant_channels = None
         if root_universe is not None:
             self.root_universe = root_universe
 
     @property
     def root_universe(self):
         return self._root_universe
+
+    @property
+    def coolant_channels(self):
+        return self._coolant_channels
 
     @property
     def bounding_box(self):
@@ -514,3 +521,20 @@ class Geometry(object):
         clone = deepcopy(self)
         clone.root_universe = self.root_universe.clone()
         return clone
+
+
+    def create_coolant_channels(self):
+        """Create the coolant channels for the geometry"""
+
+        self._coolant_channels = self.root_universe.create_coolant_channels(self, '')
+
+    def find_coolant_channel(self, cell, instance):
+
+        if self.coolant_channels is None:
+            self.create_coolant_channels()
+
+        for c in self.coolant_channels:
+            if cell in c.cell_offsets.keys() and offset in c.cell_offsets.values():
+                return c
+
+        return None

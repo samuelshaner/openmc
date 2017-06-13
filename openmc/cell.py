@@ -620,3 +620,27 @@ class Cell(object):
             element.set("rotation", ' '.join(map(str, self.rotation)))
 
         return element
+
+    def create_coolant_channels(self, geometry, path):
+        """Create the coolant channels for all sub-elements in the cell
+
+        Parameters
+        ----------
+        geometry : openmc.Geometry
+            The geometry
+        path : str
+            The path to this current cell
+
+        Returns
+        -------
+        Iterable of Iterable of Iterable of openmc.CoolantChannel
+            3D array of CoolantChannel objects that make up the geometry
+
+        """
+
+        # Recursively loop over all the cells and get their coolant channels
+        if isinstance(self.fill, openmc.Material):
+            return []
+        else:
+            new_path = '{}c{}->'.format(path, self.id)
+            return self.fill.create_coolant_channels(geometry, new_path)

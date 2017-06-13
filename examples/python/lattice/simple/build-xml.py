@@ -95,6 +95,9 @@ lattice.universes = [[univ1, univ2, univ1, univ2],
                      [univ1, univ2, univ1, univ2],
                      [univ2, univ3, univ2, univ3]]
 
+lattice.channelizeable = True
+lattice.discretize_coolant_channels()
+
 # Fill Cell with the Lattice
 cell1.fill = lattice
 
@@ -102,6 +105,11 @@ cell1.fill = lattice
 geometry = openmc.Geometry(root)
 geometry.export_to_xml()
 
+geometry.determine_paths()
+geometry.create_coolant_channels()
+
+root.plot(width=(4., 4.), pixels=(200, 200), color_by='channel',
+          filename='channels.png', geometry=geometry)
 
 ###############################################################################
 #                   Exporting to OpenMC settings.xml file
