@@ -1629,3 +1629,131 @@ class HexLattice(Lattice):
 
         # Join the rows together and return the string.
         return '\n'.join(rows)
+
+
+def get_cylindrical_lattice_universe(pins, offsets, radii, univs):
+    """Return a universe object that mimics a cylindrical lattice
+
+    OpenMC does not have a cylindrical lattice object, so this function
+    constructs a cylindrical lattice with a constant angular pitch by taking
+    a making a base universe object and adding cells that are laid out in a
+    cylindrical lattice. Each cell is then filled with a universe. The pins
+    in each ring are laid out as follows:
+
+                   (ring, pin)
+
+                      (2, 0)
+                (2,11)      (2, 1)
+          (2,10)      (1, 0)      (2, 2)
+                (1, 5)      (1, 1)
+          (2, 9)      (0, 0)      (2, 3)
+                (1, 4)      (1, 2)
+          (2, 8)      (1, 3)      (2, 4)
+                (2, 7)      (2, 5)
+                      (2, 6)
+
+    The following is an example of how to create a three ring cylindrical
+    lattice:
+
+    >>> # Instantiate some Materials and register the appropriate Nuclides
+    >>> fuel = openmc.Material(material_id=1, name='fuel')
+    >>> fuel.set_density('g/cc', 4.5)
+    >>> fuel.add_nuclide('U235', 1.)
+
+    >>> moderator = openmc.Material(material_id=2, name='moderator')
+    >>> moderator.set_density('g/cc', 1.0)
+    >>> moderator.add_element('H', 2.)
+    >>> moderator.add_element('O', 1.)
+    >>> moderator.add_s_alpha_beta('c_H_in_H2O')
+
+    >>> fuel_cell = openmc.Cell(name='fuel')
+    >>> mod_cell  = openmc.Cell(name='mod')
+    >>> fuel_or = openmc.ZCylinder(R=0.3)
+    >>> fuel_cell.region = -fuel_or
+    >>> mod_cell.region  = +fuel_or
+
+    >>> fuel_cell.fill = fuel
+    >>> mod_cell.fill  = moderator
+
+    >>> p = openmc.Universe(name='pin')
+    >>> p.add_cells([fuel_cell, mod_cell])
+
+    >>> pins     = [1  , 6  , 12]
+    >>> offsets  = [0  , 0  , 15]
+    >>> radii    = [0.0, 1.0, 2.0]
+    >>> univs    = [[] for i in range(len(pins))]
+    >>> univs[0] = [p] * pins[0]
+    >>> univs[1] = [p] * pins[1]
+    >>> univs[2] = [p] * pins[2]
+
+    >>> lat_univ = openmc.get_cylindrical_lattice_universe(pins, offsets, radii, univs)
+
+    Parameters
+    ----------
+    pins : Iterable of int
+        Number of pins in each ring
+    offsets : Iterable of float
+        Angle offset (in degrees) of the first pin from the vertical.
+    radii : Iterable of float
+        The radii to the center of the cells in each of the rings.
+    univs : Iterable of Iterable of openmc.Universe
+        The universes to fill the cells of the cylindrical lattice.
+
+    Returns
+    -------
+    openmc.Universe
+        The Universe object that mimics a cylindrical lattice.
+
+    """
+
+    # Create lists to store the cells and surfaces
+    cells = []
+    cylinders = []
+    planes = []
+
+    # Create a universe to store all the cells that comprise the lattice
+    lat_univ = openmc.Universe()
+
+    # Create ring cylinders
+    for r in range(len(pins)-1):
+        cylinders.append(openmc.ZCylinder(R=(radii[r]+radii[r+1])/2.))
+
+    # Create ring planes
+    for r in range(len(pins)):
+        planes.append([])
+        if pins[r] > 1:
+            for p in range(pins[r]):
+                theta = (offsets[r] + (p-0.5)/float(pins[r])*360.)/180. * np.pi
+                planes[-1].append(openmc.Plane(A=np.cos(theta), B=-np.sin(theta)))
+
+    # Create ring cells
+    for r in range(len(pins)):
+        cells.append([])
+        for p in range(pins[r]):
+            cell = openmc.Cell()
+            if r == 0:
+                if len(pins) > 1:
+                    cell.region = -cylinders[0]
+            elif r == len(pins)-1:
+                cell.region = +cylinders[r-1]
+            else:
+                cell.region = +cylinders[r-1] & -cylinders[r]
+
+            if pins[r] > 1:
+                if p == pins[r]-1:
+                    cell.region = cell.region & +planes[r][p] & -planes[r][0]
+                else:
+                    cell.region = cell.region & +planes[r][p] & -planes[r][p+1]
+
+            cells[-1].append(cell)
+
+    # Fill ring cells with universes
+    for r in range(len(pins)):
+        for p in range(pins[r]):
+            x = radii[r] * np.sin( (offsets[r] + p/float(pins[r])*360.)/180. * np.pi)
+            y = radii[r] * np.cos( (offsets[r] + p/float(pins[r])*360.)/180. * np.pi)
+            cells[r][p].fill = univs[r][p]
+            cells[r][p].translation = [x,y,0.]
+            lat_univ.add_cell(cells[r][p])
+
+    return lat_univ
