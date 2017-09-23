@@ -210,11 +210,6 @@ class MGXS(object):
         Whether or not the MGXS is merged from one or more other MGXS
     hdf5_key : str
         The key used to index multi-group cross sections in an HDF5 data store
-    energy_mode : {'continuous-energy', 'multi-group'}
-        Set whether the cross-sections will be generated from a
-        continuous-energy or multi-group solve. The multi-group mode has the
-        capability to use tracklength tallies with energyout filters, so this
-        opens up additionally options in generating MGXS.
 
     """
 
@@ -240,7 +235,6 @@ class MGXS(object):
         self._derived = False
         self._hdf5_key = None
         self._valid_estimators = ESTIMATOR_TYPES
-        self._energy_mode = 'continuous-energy'
 
         self.name = name
         self.by_nuclide = by_nuclide
@@ -276,7 +270,6 @@ class MGXS(object):
             clone._loaded_sp = self._loaded_sp
             clone._derived = self.derived
             clone._hdf5_key = self._hdf5_key
-            clone._energy_mode = self._energy_mode
 
             clone._tallies = OrderedDict()
             for tally_type, tally in self.tallies.items():
@@ -586,10 +579,6 @@ class MGXS(object):
         else:
             return self._rxn_type
 
-    @property
-    def energy_mode(self):
-        return self._energy_mode
-
     @name.setter
     def name(self, name):
         cv.check_type('name', name, string_types)
@@ -652,12 +641,6 @@ class MGXS(object):
     def tally_trigger(self, tally_trigger):
         cv.check_type('tally trigger', tally_trigger, openmc.Trigger)
         self._tally_trigger = tally_trigger
-
-    @energy_mode.setter
-    def energy_mode(self, energy_mode):
-        cv.check_value('energy mode', energy_mode,
-                    ['continuous-energy', 'multi-group'])
-        self._energy_mode = energy_mode
 
     @sparse.setter
     def sparse(self, sparse):
@@ -4129,18 +4112,9 @@ class ScatterMatrixXS(MatrixMGXS):
     def estimator(self):
         if self.formulation == 'simple':
             if self.scatter_format == 'legendre':
-                if self.legendre_order == 0:
-                    if self.correction or self.energy_mode == 'continuous-energy':
-                        return 'analog'
-                    else:
-                        return 'tracklength'
-                else:
-                    return 'analog'
+                return 'analog'
             elif self.scatter_format == 'histogram':
-                if self.energy_mode == 'multi-group':
-                    return 'tracklength'
-                else:
-                    return 'analog'
+                return 'analog'
         else:
             # Add estimators for groupwise scattering cross section
             estimators = ['tracklength', 'tracklength']
@@ -4148,22 +4122,13 @@ class ScatterMatrixXS(MatrixMGXS):
             # Add estimators for group-to-group scattering probabilities
             # Add scores for group-to-group scattering probability matrix
             if self.scatter_format == 'legendre':
-                if self.legendre_order == 0 and self.energy_mode == 'multi-group':
-                    estimators.append('tracklength')
-                else:
-                    estimators.append('analog')
+                estimators.append('analog')
             elif self.scatter_format == 'histogram':
-                if self.energy_mode == 'multi-group':
-                    estimators.append('tracklength')
-                else:
-                    estimators.append('analog')
+                estimators.append('analog')
 
             # Add estimators for multiplicity matrix
             if self.nu:
-                if self.energy_mode == 'multi-group':
-                    estimators.extend(['tracklength', 'tracklength'])
-                else:
-                    estimators.extend(['analog', 'analog'])
+                estimators.extend(['analog', 'analog'])
 
             # Add estimators for transport correction
             if self.correction == 'P0' and self.legendre_order == 0:
@@ -4329,7 +4294,7 @@ class ScatterMatrixXS(MatrixMGXS):
                     # Override the nuclides for tally arithmetic
                     correction.nuclides = scatter_p1.nuclides
                     self._xs_tally -= correction
-                
+
                 self._compute_xs()
 
         return self._xs_tally
@@ -4360,10 +4325,7 @@ class ScatterMatrixXS(MatrixMGXS):
         self._formulation = formulation
 
         if self.formulation == 'simple':
-            if energy_mode == 'multi-group':
-                self._valid_estimators = ['tracklength']
-            else:
-                self._valid_estimators = ['analog']
+            self._valid_estimators = ['analog']
 
             if not self.nu:
                 self._hdf5_key = 'scatter matrix'
@@ -5130,18 +5092,6 @@ class MultiplicityMatrixXS(MatrixMGXS):
         self._valid_estimators = ['analog']
 
     @property
-    def energy_mode(self):
-        return self._energy_mode
-
-    @energy_mode.setter
-    def energy_mode(self, energy_mode):
-        super(MultiplicityMatrixXS, self).energy_mode(energy_mode)
-
-        if energy_mode == 'multi-group':
-            self._valid_estimators = ESTIMATOR_TYPES
-            self._estimator = 'tracklength'
-
-    @property
     def scores(self):
         scores = ['nu-scatter', 'scatter']
         return scores
@@ -5308,18 +5258,6 @@ class ScatterProbabilityMatrix(MatrixMGXS):
         self._hdf5_key = 'scatter probability matrix'
         self._estimator = 'analog'
         self._valid_estimators = ['analog']
-
-    @property
-    def energy_mode(self):
-        return self._energy_mode
-
-    @energy_mode.setter
-    def energy_mode(self, energy_mode):
-        super(ScatterProbabilityMatrix, self).energy_mode(energy_mode)
-
-        if energy_mode == 'multi-group':
-            self._valid_estimators = ESTIMATOR_TYPES
-            self._estimator = 'tracklength'
 
     @property
     def scores(self):
@@ -5500,18 +5438,6 @@ class NuFissionMatrixXS(MatrixMGXS):
         self.prompt = prompt
 
     @property
-    def energy_mode(self):
-        return self._energy_mode
-
-    @energy_mode.setter
-    def energy_mode(self, energy_mode):
-        super(NuFissionMatrixXS, self).energy_mode(energy_mode)
-
-        if energy_mode == 'multi-group':
-            self._valid_estimators = ESTIMATOR_TYPES
-            self._estimator = 'tracklength'
-
-    @property
     def prompt(self):
         return self._prompt
 
@@ -5519,13 +5445,8 @@ class NuFissionMatrixXS(MatrixMGXS):
     def prompt(self, prompt):
         cv.check_type('prompt', prompt, bool)
         self._prompt = prompt
-
-        if prompt or self.energy_mode == 'multi-group':
-            self._valid_estimators = ESTIMATOR_TYPES
-            self._estimator = 'tracklength'
-        else:
-            self._valid_estimators = ['analog']
-            self._estimator = 'analog'
+        self._valid_estimators = ['analog']
+        self._estimator = 'analog'
 
     def __deepcopy__(self, memo):
         clone = super(NuFissionMatrixXS, self).__deepcopy__(memo)
@@ -5676,20 +5597,6 @@ class Chi(MGXS):
         clone = super(Chi, self).__deepcopy__(memo)
         clone._prompt = self.prompt
         return clone
-
-    @property
-    def energy_mode(self):
-        return self._energy_mode
-
-    @energy_mode.setter
-    def energy_mode(self, energy_mode):
-        cv.check_value('energy mode', energy_mode,
-                    ['continuous-energy', 'multi-group'])
-        self._energy_mode = energy_mode
-
-        if energy_mode == 'multi-group':
-            self._valid_estimators = ESTIMATOR_TYPES
-            self._estimator = 'tracklength'
 
     @property
     def prompt(self):
