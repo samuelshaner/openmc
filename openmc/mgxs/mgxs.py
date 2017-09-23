@@ -4111,20 +4111,13 @@ class ScatterMatrixXS(MatrixMGXS):
     @property
     def estimator(self):
         if self.formulation == 'simple':
-            if self.scatter_format == 'legendre':
-                return 'analog'
-            elif self.scatter_format == 'histogram':
-                return 'analog'
+            return 'analog'
         else:
             # Add estimators for groupwise scattering cross section
             estimators = ['tracklength', 'tracklength']
 
             # Add estimators for group-to-group scattering probabilities
-            # Add scores for group-to-group scattering probability matrix
-            if self.scatter_format == 'legendre':
-                estimators.append('analog')
-            elif self.scatter_format == 'histogram':
-                estimators.append('analog')
+            estimators.append('analog')
 
             # Add estimators for multiplicity matrix
             if self.nu:
@@ -4326,7 +4319,6 @@ class ScatterMatrixXS(MatrixMGXS):
 
         if self.formulation == 'simple':
             self._valid_estimators = ['analog']
-
             if not self.nu:
                 self._hdf5_key = 'scatter matrix'
             else:
@@ -5445,8 +5437,6 @@ class NuFissionMatrixXS(MatrixMGXS):
     def prompt(self, prompt):
         cv.check_type('prompt', prompt, bool)
         self._prompt = prompt
-        self._valid_estimators = ['analog']
-        self._estimator = 'analog'
 
     def __deepcopy__(self, memo):
         clone = super(NuFissionMatrixXS, self).__deepcopy__(memo)
@@ -5589,9 +5579,10 @@ class Chi(MGXS):
             self._rxn_type = 'chi'
         else:
             self._rxn_type = 'chi-prompt'
-        self.prompt = prompt
+
         self._estimator = 'analog'
         self._valid_estimators = ['analog']
+        self.prompt = prompt
 
     def __deepcopy__(self, memo):
         clone = super(Chi, self).__deepcopy__(memo)
@@ -6188,8 +6179,8 @@ class InverseVelocity(MGXS):
         if xs_type == 'macro':
             return 'second/cm'
         else:
-            raise ValueError('Unable to return the units of InverseVelocity for'
-                             ' xs_type other than "macro"')
+            raise ValueError('Unable to return the units of InverseVelocity'
+                             ' for xs_type other than "macro"')
 
 
 @add_metaclass(ABCMeta)
