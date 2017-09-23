@@ -2807,24 +2807,25 @@ class TransportXS(MGXS):
 
 
 class DiffusionCoefficient(TransportXS):
-    r"""A transport-corrected total multi-group cross section.
+    r"""A diffusion coefficient multi-group cross section.
 
     This class can be used for both OpenMC input generation and tally data
     post-processing to compute spatially-homogenized and energy-integrated
     multi-group cross sections for multi-group neutronics calculations. At a
-    minimum, one needs to set the :attr:`TransportXS.energy_groups` and
-    :attr:`TransportXS.domain` properties. Tallies for the flux and appropriate
-    reaction rates over the specified domain are generated automatically via the
-    :attr:`TransportXS.tallies` property, which can then be appended to a
-    :class:`openmc.Tallies` instance.
+    minimum, one needs to set the :attr:`DiffusionCoefficient.energy_groups`
+    and :attr:`DiffusionCoefficient.domain` properties. Tallies for the flux
+    and appropriate reaction rates over the specified domain are generated
+    automatically via the :attr:`DiffusionCoefficient.tallies` property, which
+    can then be appended to a :class:`openmc.Tallies` instance.
 
     For post-processing, the :meth:`MGXS.load_from_statepoint` will pull in the
     necessary data to compute multi-group cross sections from a
     :class:`openmc.StatePoint` instance. The derived multi-group cross section
-    can then be obtained from the :attr:`TransportXS.xs_tally` property.
+    can then be obtained from the :attr:`DiffusionCoefficient.xs_tally`
+    property.
 
     For a spatial domain :math:`V` and energy group :math:`[E_g,E_{g-1}]`, the
-    transport-corrected total cross section is calculated as:
+    diffusion coefficient is calculated as:
 
     .. math::
 
@@ -2840,6 +2841,9 @@ class DiffusionCoefficient(TransportXS):
        \int_{E_g}^{E_{g-1}} dE \; \psi (r, E, \Omega) \\
        \sigma_{tr} &= \frac{\langle \sigma_t \phi \rangle - \langle \sigma_{s1}
        \phi \rangle}{\langle \phi \rangle}
+
+    To incorporate the effect of scattering multiplication in the above
+    relation, the `nu` parameter can be set to `True`.
 
     Parameters
     ----------
@@ -2925,7 +2929,6 @@ class DiffusionCoefficient(TransportXS):
                                                    nu, by_nuclide, name,
                                                    num_polar, num_azimuthal)
         self._rxn_type = 'diffusion-coefficient'
-        cv.check_value('nu for diffusion-coefficient', nu, [False])
 
     @property
     def rxn_rate_tally(self):
@@ -4111,7 +4114,7 @@ class ScatterMatrixXS(MatrixMGXS):
     @property
     def estimator(self):
         if self.formulation == 'simple':
-            return 'analog'
+            return self._estimator
         else:
             # Add estimators for groupwise scattering cross section
             estimators = ['tracklength', 'tracklength']
