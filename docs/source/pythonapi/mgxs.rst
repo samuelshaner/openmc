@@ -26,6 +26,8 @@ Multi-group Cross Sections
     openmc.mgxs.Chi
     openmc.mgxs.FissionXS
     openmc.mgxs.InverseVelocity
+    openmc.mgxs.MGSurfaceCouplingTerm
+    openmc.mgxs.Current
     openmc.mgxs.KappaFissionXS
     openmc.mgxs.MultiplicityMatrixXS
     openmc.mgxs.NuFissionMatrixXS
@@ -34,6 +36,7 @@ Multi-group Cross Sections
     openmc.mgxs.ScatterProbabilityMatrix
     openmc.mgxs.TotalXS
     openmc.mgxs.TransportXS
+    openmc.mgxs.DiffusionCoefficient
 
 Multi-delayed-group Cross Sections
 ----------------------------------

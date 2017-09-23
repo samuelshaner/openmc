@@ -2829,18 +2829,19 @@ class DiffusionCoefficient(TransportXS):
 
     .. math::
 
-       \langle \sigma_t \phi \rangle &= \int_{r \in V} dr \int_{4\pi}
-       d\Omega \int_{E_g}^{E_{g-1}} dE \sigma_t (r, E) \psi
+       \langle \Sigma_t \phi \rangle &= \int_{r \in V} dr \int_{4\pi}
+       d\Omega \int_{E_g}^{E_{g-1}} dE \Sigma_t (r, E) \psi
        (r, E, \Omega) \\
-       \langle \sigma_{s1} \phi \rangle &= \int_{r \in V} dr
+       \langle \Sigma_{s1} \phi \rangle &= \int_{r \in V} dr
        \int_{4\pi} d\Omega \int_{E_g}^{E_{g-1}} dE \int_{4\pi}
-       d\Omega' \int_0^\infty dE' \int_{-1}^1 d\mu \; \mu \sigma_s
+       d\Omega' \int_0^\infty dE' \int_{-1}^1 d\mu \; \mu \Sigma_s
        (r, E' \rightarrow E, \Omega' \cdot \Omega)
        \phi (r, E', \Omega) \\
        \langle \phi \rangle &= \int_{r \in V} dr \int_{4\pi} d\Omega
        \int_{E_g}^{E_{g-1}} dE \; \psi (r, E, \Omega) \\
-       \sigma_{tr} &= \frac{\langle \sigma_t \phi \rangle - \langle \sigma_{s1}
-       \phi \rangle}{\langle \phi \rangle}
+       \Sigma_{tr} &= \frac{\langle \Sigma_t \phi \rangle - \langle \Sigma_{s1}
+       \phi \rangle}{\langle \phi \rangle} \\
+       D &= \frac{1}{3 \Sigma_{tr}}
 
     To incorporate the effect of scattering multiplication in the above
     relation, the `nu` parameter can be set to `True`.
@@ -2967,7 +2968,7 @@ class DiffusionCoefficient(TransportXS):
         return self._xs_tally
 
     def get_condensed_xs(self, coarse_groups, condense_dif_coef=True):
-        """Construct an energy-condensed version of this cross section.
+        """Construct an energy-condensed version of the diffusion coefficient.
 
         Parameters
         ----------
@@ -6187,86 +6188,90 @@ class InverseVelocity(MGXS):
 
 
 @add_metaclass(ABCMeta)
-class SurfaceMGXS(MGXS):
-    """An abstract multi-group cross section for some energy group structure
-    on the surfaces of a mesh domain.
+class MGSurfaceCouplingTerm(MGXS):
+    """An abstract multi-group surface coupling term for some energy group
+    structure on the surfaces of a mesh domain.
 
     This class can be used for both OpenMC input generation and tally data
-    post-processing to compute surface- and energy-integrated multi-group cross
-    section for multi-group neutronics calculations.
+    post-processing to compute surface- and energy-integrated multi-group
+    coupling terms for multi-group neutronics calculations.
 
     NOTE: Users should instantiate the subclasses of this abstract class.
 
     Parameters
     ----------
     domain : openmc.Mesh
-        The domain for spatial homogenization
+        The domain for surface integration. Must be of type openmc.Mesh
     domain_type : {'mesh'}
-        The domain type for spatial homogenization
+        The domain type for surface integration. Must be 'mesh'.
     energy_groups : openmc.mgxs.EnergyGroups
         The energy group structure for energy condensation
     by_nuclide : bool
-        If true, computes cross sections for each nuclide in domain
+        Must be False for coupling terms as this represents streaming between
+        domains and not an interaction within a domain
     name : str, optional
-        Name of the multi-group cross section. Used as a label to identify
+        Name of the coupling term. Used as a label to identify
         tallies in OpenMC 'tallies.xml' file.
 
     Attributes
     ----------
     name : str, optional
-        Name of the multi-group cross section
+        Name of the multi-group coupling term
     rxn_type : str
-        Reaction type (e.g., 'total', 'nu-fission', etc.)
+        Reaction type (e.g., 'current', etc.)
     by_nuclide : bool
-        If true, computes cross sections for each nuclide in domain
-    domain : Mesh
-        Domain for spatial homogenization
+        Must be False for coupling terms as this represents streaming between
+        domains and not an interaction within a domain
+    domain : openmc.Mesh
+        The domain for surface integration. Must be of type openmc.Mesh
     domain_type : {'mesh'}
-        Domain type for spatial homogenization
+        The domain type for surface integration. Must be 'mesh'.
     energy_groups : openmc.mgxs.EnergyGroups
         Energy group structure for energy condensation
     tally_trigger : openmc.Trigger
         An (optional) tally precision trigger given to each tally used to
-        compute the cross section
+        compute the coupling term
     scores : list of str
-        The scores in each tally used to compute the multi-group cross section
+        The scores in each tally used to compute the multi-group coupling term
     filters : list of openmc.Filter
-        The filters in each tally used to compute the multi-group cross section
+        The filters in each tally used to compute the multi-group coupling term
     tally_keys : list of str
         The keys into the tallies dictionary for each tally used to compute
-        the multi-group cross section
+        the multi-group coupling term
     estimator : {'tracklength', 'analog'}
-        The tally estimator used to compute the multi-group cross section
+        The tally estimator used to compute the multi-group coupling term. Must
+        be 'analog'.
     tallies : collections.OrderedDict
-        OpenMC tallies needed to compute the multi-group cross section
+        OpenMC tallies needed to compute the multi-group coupling term
     rxn_rate_tally : openmc.Tally
         Derived tally for the reaction rate tally used in the numerator to
-        compute the multi-group cross section. This attribute is None
-        unless the multi-group cross section has been computed.
+        compute the multi-group coupling term. This attribute is None
+        unless the multi-group coupling term has been computed.
     xs_tally : openmc.Tally
-        Derived tally for the multi-group cross section. This attribute
-        is None unless the multi-group cross section has been computed.
+        Derived tally for the multi-group coupling term. This attribute
+        is None unless the multi-group coupling term has been computed.
     num_subdomains : int
         The number of subdomains is equal to the number of mesh surfaces times
         two to account for both the incoming and outgoing current from the
         mesh cell surfaces.
     num_nuclides : int
-        The number of nuclides for which the multi-group cross section is
-        being tracked. This is unity if the by_nuclide attribute is False.
+        The number of nuclides for which the multi-group coupling term is
+        being tracked. Must be unity since the coupling term tallies cannot be
+        performed by nuclide.
     nuclides : Iterable of str or 'sum'
         The optional user-specified nuclides for which to compute cross
-        sections (e.g., 'U238', 'O16'). If by_nuclide is True but nuclides
-        are not specified by the user, all nuclides in the spatial domain
-        are included. This attribute is 'sum' if by_nuclide is false.
+        sections (e.g., 'U238', 'O16'). Must be 'sum' since the coupling term
+        tallies cannot be performed by nuclide.
     sparse : bool
-        Whether or not the MGXS' tallies use SciPy's LIL sparse matrix format
-        for compressed data storage
+        Whether or not the MG coupling term's tallies use SciPy's LIL sparse
+        matrix format for compressed data storage
     loaded_sp : bool
         Whether or not a statepoint file has been loaded with tally data
     derived : bool
-        Whether or not the MGXS is merged from one or more other MGXS
+        Whether or not the MG coupling term is merged from one or more other
+        MG coupling terms
     hdf5_key : str
-        The key used to index multi-group cross sections in an HDF5 data store
+        The key used to index multi-group coupling terms in an HDF5 data store
 
     """
 
@@ -6280,12 +6285,44 @@ class SurfaceMGXS(MGXS):
         return [self.rxn_type]
 
     @property
+    def by_nuclide(self):
+        return self._by_nuclide
+
+    @property
+    def nuclides(self):
+        if self.by_nuclide:
+            return self.get_nuclides()
+        else:
+            return ['sum']
+
+    @property
     def domain(self):
         return self._domain
 
     @property
     def domain_type(self):
         return self._domain_type
+
+    @property
+    def num_polar(self):
+        return self._num_polar
+
+    @property
+    def num_azimuthal(self):
+        return self._num_azimuthal
+
+    @by_nuclide.setter
+    def by_nuclide(self, by_nuclide):
+        cv.check_type('by_nuclide', by_nuclide, False)
+        self._by_nuclide = by_nuclide
+
+    @nuclides.setter
+    def nuclides(self, nuclides):
+        if nuclides != 'sum':
+            msg = 'MGSurfaceCouplingTerm cannot be tallied for separate '\
+                  'nuclides'
+            raise ValueError(msg)
+        self._nuclides = nuclides
 
     @domain.setter
     def domain(self, domain):
@@ -6300,6 +6337,16 @@ class SurfaceMGXS(MGXS):
     def domain_type(self, domain_type):
         cv.check_value('domain type', domain_type, 'mesh')
         self._domain_type = domain_type
+
+    @num_polar.setter
+    def num_polar(self, num_polar):
+        msg = 'MGSurfaceCouplingTerm cannot be discretized by polar angle'
+        raise ValueError(msg)
+
+    @num_azimuthal.setter
+    def num_azimuthal(self, num_azimuthal):
+        msg = 'MGSurfaceCouplingTerm cannot be discretized by azimuthal angle'
+        raise ValueError(msg)
 
     @property
     def xs_tally(self):
@@ -6347,13 +6394,7 @@ class SurfaceMGXS(MGXS):
         # NOTE: This is necessary for micro cross-sections which require
         # the isotopic number densities as computed by OpenMC
         geom = statepoint.summary.geometry
-        if self.domain_type in ('cell', 'distribcell'):
-            self.domain = geom.get_all_cells()[self.domain.id]
-        elif self.domain_type == 'universe':
-            self.domain = geom.get_all_universes()[self.domain.id]
-        elif self.domain_type == 'material':
-            self.domain = geom.get_all_materials()[self.domain.id]
-        elif self.domain_type == 'mesh':
+        if self.domain_type == 'mesh':
             self.domain = statepoint.meshes[self.domain.id]
         else:
             msg = 'Unable to load data from a statepoint for domain type {0} ' \
@@ -6366,9 +6407,6 @@ class SurfaceMGXS(MGXS):
             filters = [_DOMAIN_TO_FILTER[self.domain_type]]
             xyz = [range(1, x+1) for x in self.domain.dimension]
             filter_bins = [tuple(itertools.product(*xyz))]
-        elif self.domain_type != 'distribcell':
-            filters = [_DOMAIN_TO_FILTER[self.domain_type]]
-            filter_bins = [(self.domain.id,)]
         # Distribcell filters only accept single cell - neglect it when slicing
         else:
             filters = []
@@ -6482,13 +6520,7 @@ class SurfaceMGXS(MGXS):
             filter_bins.append(tuple(energy_bins))
 
         # Construct a collection of the nuclides to retrieve from the xs tally
-        if self.by_nuclide:
-            if nuclides == 'all' or nuclides == 'sum' or nuclides == ['sum']:
-                query_nuclides = self.get_nuclides()
-            else:
-                query_nuclides = nuclides
-        else:
-            query_nuclides = ['total']
+        query_nuclides = ['total']
 
         # If user requested the sum for all nuclides, use tally summation
         if nuclides == 'sum' or nuclides == ['sum']:
@@ -6502,10 +6534,7 @@ class SurfaceMGXS(MGXS):
 
         # Divide by atom number densities for microscopic cross sections
         if xs_type == 'micro':
-            if self.by_nuclide:
-                densities = self.get_nuclide_densities(nuclides)
-            else:
-                densities = self.get_nuclide_densities('sum')
+            densities = self.get_nuclide_densities('sum')
             if value == 'mean' or value == 'std_dev':
                 xs /= densities[np.newaxis, :, np.newaxis]
 
@@ -6544,105 +6573,100 @@ class SurfaceMGXS(MGXS):
         return xs
 
 
-class Current(SurfaceMGXS):
-    r"""A current multi-group cross section.
+class Current(MGSurfaceCouplingTerm):
+    r"""A current multi-group surface coupling term.
 
     This class can be used for both OpenMC input generation and tally data
-    post-processing to compute spatially-homogenized and energy-integrated
-    multi-group total cross sections for multi-group neutronics calculations. At
-    a minimum, one needs to set the :attr:`TotalXS.energy_groups` and
-    :attr:`TotalXS.domain` properties. Tallies for the flux and appropriate
-    reaction rates over the specified domain are generated automatically via the
-    :attr:`TotalXS.tallies` property, which can then be appended to a
-    :class:`openmc.Tallies` instance.
+    post-processing to compute surface- and energy-integrated
+    multi-group surface current for multi-group neutronics calculations. At
+    a minimum, one needs to set the :attr:`Current.energy_groups` and
+    :attr:`Current.domain` properties. The domain must be a openmc.Mesh object.
+    Tallies for the current on the specified domain surfaces are generated
+    automatically via the :attr:`Current.tallies` property, which can then be
+    appended to a :class:`openmc.Tallies` instance.
 
     For post-processing, the :meth:`MGXS.load_from_statepoint` will pull in the
-    necessary data to compute multi-group cross sections from a
-    :class:`openmc.StatePoint` instance. The derived multi-group cross section
-    can then be obtained from the :attr:`TotalXS.xs_tally` property.
+    necessary data to compute multi-group surface coupling term from a
+    :class:`openmc.StatePoint` instance. The derived multi-group coupling term
+    can then be obtained from the :attr:`Current.xs_tally` property.
 
-    For a spatial domain :math:`V` and energy group :math:`[E_g,E_{g-1}]`, the
-    total cross section is calculated as:
-
-    .. math::
-
-       \frac{\int_{r \in V} dr \int_{4\pi} d\Omega \int_{E_g}^{E_{g-1}} dE \;
-       \sigma_t (r, E) \psi (r, E, \Omega)}{\int_{r \in V} dr \int_{4\pi}
-       d\Omega \int_{E_g}^{E_{g-1}} dE \; \psi (r, E, \Omega)}.
+    The current is computed by tallying all the particles that cross a given
+    surface :math:`S` and energy group :math:`[E_g,E_{g-1}]`.
 
     Parameters
     ----------
-    domain : openmc.Material or openmc.Cell or openmc.Universe or openmc.Mesh
-        The domain for spatial homogenization
-    domain_type : {'material', 'cell', 'distribcell', 'universe', 'mesh'}
-        The domain type for spatial homogenization
-    groups : openmc.mgxs.EnergyGroups
+    domain : openmc.Mesh
+        The domain for surface integration. Must be of type openmc.Mesh
+    domain_type : {'mesh'}
+        The domain type for surface integration. Must be 'mesh'.
+    energy_groups : openmc.mgxs.EnergyGroups
         The energy group structure for energy condensation
     by_nuclide : bool
-        If true, computes cross sections for each nuclide in domain
+        Must be False for coupling terms as this represents streaming between
+        domains and not an interaction within a domain
     name : str, optional
-        Name of the multi-group cross section. Used as a label to identify
+        Name of the coupling term. Used as a label to identify
         tallies in OpenMC 'tallies.xml' file.
 
     Attributes
     ----------
     name : str, optional
-        Name of the multi-group cross section
+        Name of the multi-group coupling term
     rxn_type : str
-        Reaction type (e.g., 'total', 'nu-fission', etc.)
+        Reaction type (e.g., 'current', etc.)
     by_nuclide : bool
-        If true, computes cross sections for each nuclide in domain
-    domain : Material or Cell or Universe or Mesh
-        Domain for spatial homogenization
-    domain_type : {'material', 'cell', 'distribcell', 'universe', 'mesh'}
-        Domain type for spatial homogenization
+        Must be False for coupling terms as this represents streaming between
+        domains and not an interaction within a domain
+    domain : openmc.Mesh
+        The domain for surface integration. Must be of type openmc.Mesh
+    domain_type : {'mesh'}
+        The domain type for surface integration. Must be 'mesh'.
     energy_groups : openmc.mgxs.EnergyGroups
         Energy group structure for energy condensation
     tally_trigger : openmc.Trigger
         An (optional) tally precision trigger given to each tally used to
-        compute the cross section
+        compute the coupling term
     scores : list of str
-        The scores in each tally used to compute the multi-group cross section
+        The scores in each tally used to compute the multi-group coupling term
     filters : list of openmc.Filter
-        The filters in each tally used to compute the multi-group cross section
+        The filters in each tally used to compute the multi-group coupling term
     tally_keys : list of str
         The keys into the tallies dictionary for each tally used to compute
-        the multi-group cross section
+        the multi-group coupling term
     estimator : {'tracklength', 'analog'}
-        The tally estimator used to compute the multi-group cross section
+        The tally estimator used to compute the multi-group coupling term. Must
+        be 'analog'.
     tallies : collections.OrderedDict
-        OpenMC tallies needed to compute the multi-group cross section. The keys
-        are strings listed in the :attr:`TotalXS.tally_keys` property and values
-        are instances of :class:`openmc.Tally`.
+        OpenMC tallies needed to compute the multi-group coupling term
     rxn_rate_tally : openmc.Tally
         Derived tally for the reaction rate tally used in the numerator to
-        compute the multi-group cross section. This attribute is None
-        unless the multi-group cross section has been computed.
+        compute the multi-group coupling term. This attribute is None
+        unless the multi-group coupling term has been computed.
     xs_tally : openmc.Tally
-        Derived tally for the multi-group cross section. This attribute
-        is None unless the multi-group cross section has been computed.
+        Derived tally for the multi-group coupling term. This attribute
+        is None unless the multi-group coupling term has been computed.
     num_subdomains : int
-        The number of subdomains is unity for 'material', 'cell' and 'universe'
-        domain types. This is equal to the number of cell instances
-        for 'distribcell' domain types (it is equal to unity prior to loading
-        tally data from a statepoint file).
+        The number of subdomains is equal to the number of mesh surfaces times
+        two to account for both the incoming and outgoing current from the
+        mesh cell surfaces.
     num_nuclides : int
-        The number of nuclides for which the multi-group cross section is
-        being tracked. This is unity if the by_nuclide attribute is False.
+        The number of nuclides for which the multi-group coupling term is
+        being tracked. Must be unity since the coupling term tallies cannot be
+        performed by nuclide.
     nuclides : Iterable of str or 'sum'
         The optional user-specified nuclides for which to compute cross
-        sections (e.g., 'U238', 'O16'). If by_nuclide is True but nuclides
-        are not specified by the user, all nuclides in the spatial domain
-        are included. This attribute is 'sum' if by_nuclide is false.
+        sections (e.g., 'U238', 'O16'). Must be 'sum' since the coupling term
+        tallies cannot be performed by nuclide.
     sparse : bool
-        Whether or not the MGXS' tallies use SciPy's LIL sparse matrix format
-        for compressed data storage
+        Whether or not the MG coupling term's tallies use SciPy's LIL sparse
+        matrix format for compressed data storage
     loaded_sp : bool
         Whether or not a statepoint file has been loaded with tally data
     derived : bool
-        Whether or not the MGXS is merged from one or more other MGXS
+        Whether or not the MG coupling term is merged from one or more other
+        MG coupling terms
     hdf5_key : str
-        The key used to index multi-group cross sections in an HDF5 data store
+        The key used to index multi-group coupling terms in an HDF5 data store
 
     """
 
