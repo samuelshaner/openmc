@@ -44,11 +44,11 @@ module global
   type(VolumeCalculation), allocatable :: volume_calcs(:)
 
   ! Size of main arrays
-  integer :: n_cells     ! # of cells
+  integer(C_INT32_T), bind(C) :: n_cells     ! # of cells
   integer :: n_universes ! # of universes
   integer :: n_lattices  ! # of lattices
   integer :: n_surfaces  ! # of surfaces
-  integer :: n_materials ! # of materials
+  integer(C_INT32_T), bind(C) :: n_materials ! # of materials
   integer :: n_plots     ! # of plots
 
   ! These dictionaries provide a fast lookup mechanism -- the key is the
@@ -74,8 +74,9 @@ module global
   ! ============================================================================
   ! CROSS SECTION RELATED VARIABLES NEEDED REGARDLESS OF CE OR MG
 
-  integer :: n_nuclides_total ! Number of nuclide cross section tables
-  integer :: n_elements       ! Number of photon cross section tables
+  ! Number of nuclide cross section tables
+  integer(C_INT), bind(C, name='n_nuclides') :: n_nuclides_total
+  integer(C_INT), bind(C, name='n_elements') :: n_elements
 
   ! Cross section caches
   type(NuclideMicroXS), allocatable :: micro_xs(:)  ! Cache for each nuclide
@@ -148,7 +149,7 @@ module global
   integer :: max_order
 
   ! Whether or not to convert Legendres to tabulars
-  logical :: legendre_to_tabular = .True.
+  logical :: legendre_to_tabular = .true.
 
   ! Number of points to use in the Legendre to tabular conversion
   integer :: legendre_to_tabular_points = 33
@@ -175,6 +176,7 @@ module global
   type(VectorInt) :: active_current_tallies
   type(VectorInt) :: active_collision_tallies
   type(VectorInt) :: active_tallies
+  type(VectorInt) :: active_surface_tallies
 
   ! Global tallies
   !   1) collision estimate of k-eff
@@ -200,7 +202,7 @@ module global
   integer :: n_user_meshes  = 0 ! # of structured user meshes
   integer :: n_filters      = 0 ! # of filters
   integer :: n_user_filters = 0 ! # of user filters
-  integer :: n_tallies      = 0 ! # of tallies
+  integer(C_INT32_T), bind(C) :: n_tallies = 0 ! # of tallies
   integer :: n_user_tallies = 0 ! # of user tallies
 
   ! Tally derivatives
@@ -229,8 +231,8 @@ module global
   integer    :: n_inactive        ! # of inactive batches
   integer    :: n_active          ! # of active batches
   integer    :: gen_per_batch = 1 ! # of generations per batch
-  integer    :: current_batch = 0 ! current batch
-  integer    :: current_gen   = 0 ! current generation within a batch
+  integer    :: current_batch     ! current batch
+  integer    :: current_gen       ! current generation within a batch
   integer    :: total_gen     = 0 ! total number of generations simulated
 
   ! ============================================================================
@@ -264,7 +266,6 @@ module global
   real(8) :: k_col_abs = ZERO ! sum over batches of k_collision * k_absorption
   real(8) :: k_col_tra = ZERO ! sum over batches of k_collision * k_tracklength
   real(8) :: k_abs_tra = ZERO ! sum over batches of k_absorption * k_tracklength
-  real(8) :: k_combined(2)    ! combined best estimate of k-effective
 
   ! Shannon entropy
   logical :: entropy_on = .false.
@@ -475,6 +476,7 @@ contains
     if (allocated(surfaces)) deallocate(surfaces)
     if (allocated(materials)) deallocate(materials)
     if (allocated(plots)) deallocate(plots)
+    if (allocated(volume_calcs)) deallocate(volume_calcs)
 
     ! Deallocate geometry debugging information
     if (allocated(overlap_check_cnt)) deallocate(overlap_check_cnt)
@@ -489,6 +491,8 @@ contains
     end if
     if (allocated(elements)) deallocate(elements)
 
+    if (allocated(libraries)) deallocate(libraries)
+
     if (allocated(res_scat_nuclides)) deallocate(res_scat_nuclides)
 
     if (allocated(nuclides_MG)) deallocate(nuclides_MG)
@@ -496,7 +500,6 @@ contains
     if (allocated(macro_xs)) deallocate(macro_xs)
 
     if (allocated(sab_tables)) deallocate(sab_tables)
-    if (allocated(micro_xs)) deallocate(micro_xs)
 
     ! Deallocate external source
     if (allocated(external_source)) deallocate(external_source)
@@ -511,20 +514,23 @@ contains
     if (allocated(meshes)) deallocate(meshes)
     if (allocated(filters)) deallocate(filters)
     if (allocated(tallies)) deallocate(tallies)
-    if (allocated(filter_matches)) deallocate(filter_matches)
 
     ! Deallocate fission and source bank and entropy
 !$omp parallel
     if (allocated(fission_bank)) deallocate(fission_bank)
+    if (allocated(filter_matches)) deallocate(filter_matches)
+    if (allocated(tally_derivs)) deallocate(tally_derivs)
 !$omp end parallel
 #ifdef _OPENMP
     if (allocated(master_fission_bank)) deallocate(master_fission_bank)
 #endif
     if (allocated(source_bank)) deallocate(source_bank)
-    if (allocated(entropy_p)) deallocate(entropy_p)
 
     ! Deallocate array of work indices
     if (allocated(work_index)) deallocate(work_index)
+
+    if (allocated(energy_bins)) deallocate(energy_bins)
+    if (allocated(energy_bin_avg)) deallocate(energy_bin_avg)
 
     ! Deallocate CMFD
     call deallocate_cmfd(cmfd)
@@ -534,6 +540,7 @@ contains
     call active_tracklength_tallies % clear()
     call active_current_tallies % clear()
     call active_collision_tallies % clear()
+    call active_surface_tallies % clear()
     call active_tallies % clear()
 
     ! Deallocate track_identifiers
@@ -551,6 +558,7 @@ contains
     call plot_dict % clear()
     call nuclide_dict % clear()
     call sab_dict % clear()
+    call library_dict % clear()
 
     ! Clear statepoint and sourcepoint batch set
     call statepoint_batch % clear()

@@ -172,7 +172,8 @@ contains
     integer, intent(in) :: intracomm         ! MPI intracommunicator
 #endif
 
-    integer                   :: bank_blocks(6)   ! Count for each datatype
+    integer                   :: mpi_err          ! MPI error code
+    integer                   :: bank_blocks(5)   ! Count for each datatype
 #ifdef MPIF08
     type(MPI_Datatype)        :: bank_types(6)
 #else

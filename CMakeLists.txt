@@ -320,7 +320,6 @@ set(LIBOPENMC_FORTRAN_SRC
   src/endf_header.F90
   src/energy_distribution.F90
   src/error.F90
-  src/finalize.F90
   src/geometry.F90
   src/geometry_header.F90
   src/global.F90
@@ -415,7 +414,7 @@ target_link_libraries(${program} ${ldflags} libopenmc)
 add_custom_command(TARGET libopenmc POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy
   $<TARGET_FILE:libopenmc>
-  ${CMAKE_CURRENT_SOURCE_DIR}/openmc/_$<TARGET_FILE_NAME:libopenmc>
+  ${CMAKE_CURRENT_SOURCE_DIR}/openmc/capi/_$<TARGET_FILE_NAME:libopenmc>
   COMMENT "Copying libopenmc to Python module directory")
 
 #===============================================================================
