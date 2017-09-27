@@ -606,9 +606,9 @@ class Library(object):
 
         Parameters
         ----------
-        domain : Material or Cell or Universe or Integral
+        domain : Material or Cell or Universe or Mesh or Integral
             The material, cell, or universe object of interest (or its ID)
-        mgxs_type : {'total', 'transport', 'nu-transport', 'absorption', 'capture', 'fission', 'nu-fission', 'kappa-fission', 'scatter', 'nu-scatter', 'scatter matrix', 'nu-scatter matrix', 'multiplicity matrix', 'nu-fission matrix', chi', 'chi-prompt', 'inverse-velocity', 'prompt-nu-fission', 'prompt-nu-fission matrix', 'delayed-nu-fission', 'delayed-nu-fission matrix', 'chi-delayed', 'beta'}
+        mgxs_type : {'total', 'transport', 'nu-transport', 'absorption', 'capture', 'fission', 'nu-fission', 'kappa-fission', 'scatter', 'nu-scatter', 'scatter matrix', 'nu-scatter matrix', 'multiplicity matrix', 'nu-fission matrix', chi', 'chi-prompt', 'inverse-velocity', 'prompt-nu-fission', 'prompt-nu-fission matrix', 'current', 'diffusion-coefficient', 'delayed-nu-fission', 'delayed-nu-fission matrix', 'chi-delayed', 'beta'}
             The type of multi-group cross section object to return
 
         Returns
@@ -1001,6 +1001,11 @@ class Library(object):
             xsdata.set_total_mgxs(mymgxs, xs_type=xs_type, nuclide=[nuclide],
                                   subdomain=subdomain)
 
+        elif 'diffusion-coefficient' in self.mgxs_types:
+            mymgxs = self.get_mgxs(domain, 'diffusion-coefficient')
+            xsdata.set_diffusion_coefficient_mgxs(mymgxs, nuclide=[nuclide],
+                                                  subdomain=subdomain)
+
         if 'absorption' in self.mgxs_types:
             mymgxs = self.get_mgxs(domain, 'absorption')
             xsdata.set_absorption_mgxs(mymgxs, xs_type=xs_type,
@@ -1023,6 +1028,10 @@ class Library(object):
             xsdata.set_inverse_velocity_mgxs(mymgxs, xs_type=xs_type,
                                              nuclide=[nuclide],
                                              subdomain=subdomain)
+
+        if 'current' in self.mgxs_types:
+            mymgxs = self.get_mgxs(domain, 'current')
+            xsdata.set_current_mgxs(mymgxs, subdomain=subdomain)
 
         if 'nu-fission matrix' in self.mgxs_types:
             mymgxs = self.get_mgxs(domain, 'nu-fission matrix')

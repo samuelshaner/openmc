@@ -26,6 +26,10 @@ _CURRENT_NAMES = {1:  'x-min out', 2:  'x-min in',
                   9:  'z-min out', 10: 'z-min in',
                   11: 'z-max out', 12: 'z-max in'}
 
+_SURFACE_NAMES = {1: 'x-min', 2: 'x-max',
+                  3: 'y-min', 4: 'y-max',
+                  5: 'z-min', 6: 'z-max'}
+
 
 class FilterMeta(ABCMeta):
     def __new__(cls, name, bases, namespace, **kwargs):
@@ -576,7 +580,7 @@ class CellFilter(WithIDFilter):
     @property
     def bins(self):
         return self._bins
-      
+
     @bins.setter
     def bins(self, bins):
         self._smart_set_bins(bins, openmc.Cell)
@@ -609,7 +613,7 @@ class CellFromFilter(WithIDFilter):
     @property
     def bins(self):
         return self._bins
-      
+
     @bins.setter
     def bins(self, bins):
         self._smart_set_bins(bins, openmc.Cell)
@@ -789,6 +793,17 @@ class MeshFilter(Filter):
         out.num_bins = group['n_bins'].value
 
         return out
+
+    @property
+    def num_bins(self):
+        return np.prod(self.mesh.dimension)
+
+    # Since num_bins property is declared, also need a num_bins.setter, but
+    # we don't want it to do anything since num_bins is completely determined
+    # by len(self.bins).  We also don't want to raise an error because that
+    # makes importing from HDF5 more complicated.
+    @num_bins.setter
+    def num_bins(self, num_bins): pass
 
     @property
     def mesh(self):

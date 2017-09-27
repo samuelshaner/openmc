@@ -3890,10 +3890,7 @@ contains
               type is (MeshFilter)
                 filt % id = i_filt
                 filt % mesh = i_mesh
-
-                ! We need to increase the dimension by one since we also need
-                ! currents coming into and out of the boundary mesh cells.
-                filt % n_bins = product(m % dimension + 1)
+                filt % n_bins = product(m % dimension)
 
               ! Add filter to dictionary
               call filter_dict % add_key(filt % id, i_filt)

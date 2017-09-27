@@ -83,6 +83,10 @@ class Mesh(EqualityMixin, IDManagerMixin):
     def num_mesh_cells(self):
         return np.prod(self._dimension)
 
+    @property
+    def num_dimensions(self):
+        return len(self._dimension)
+
     @name.setter
     def name(self, name):
         if name is not None:

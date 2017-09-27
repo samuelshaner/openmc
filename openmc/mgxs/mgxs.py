@@ -10,11 +10,14 @@ import itertools
 
 from six import add_metaclass, string_types
 import numpy as np
+import scipy.sparse as sps
 
 import openmc
 import openmc.checkvalue as cv
 from openmc.tallies import ESTIMATOR_TYPES
 from openmc.mgxs import EnergyGroups
+from openmc.filter import _CURRENT_NAMES
+from openmc.filter import _SURFACE_NAMES
 
 
 # Supported cross section types
@@ -40,8 +43,10 @@ MGXS_TYPES = ['total',
               'inverse-velocity',
               'prompt-nu-fission',
               'prompt-nu-fission matrix',
-              'current',
-              'diffusion-coefficient']
+              'cmfd-coupling',
+              'nu-cmfd-coupling',
+              'cmfd-coupling-correction',
+              'nu-cmfd-coupling-correction']
 
 # Supported domain types
 DOMAIN_TYPES = ['cell',
@@ -115,6 +120,25 @@ def _df_column_convert_to_bin(df, current_name, new_name, values_to_bin,
 
     # And rename the column
     df.rename(columns={current_name: new_name}, inplace=True)
+
+def _block_diag(array):
+
+    ni, ng, ng = array.shape
+    diags = np.zeros((ng*2-1, ni * ng))
+    ndiag = [0] + [g for g in range(1,ng)] + [-g for g in range(1,ng)]
+
+    for i in range(ni):
+        for r in range(ng):
+            for c in range(ng):
+                diags[c-r][i*ng+r] = array[i, r, c]
+
+    diags2 = [diags[0]]
+    for g in range(1,ng):
+        diags2.append(diags[g][:-g])
+    for g in range(1,ng):
+        diags2.append(diags[-g][g:])
+
+    return sps.diags(diags2, ndiag)
 
 
 @add_metaclass(ABCMeta)
@@ -679,7 +703,7 @@ class MGXS(object):
 
         Parameters
         ----------
-        mgxs_type : {'total', 'transport', 'nu-transport', 'absorption', 'capture', 'fission', 'nu-fission', 'kappa-fission', 'scatter', 'nu-scatter', 'scatter matrix', 'nu-scatter matrix', 'multiplicity matrix', 'nu-fission matrix', 'chi', 'chi-prompt', 'inverse-velocity', 'prompt-nu-fission', 'prompt-nu-fission matrix', 'diffusion-coefficient', 'current'}
+        mgxs_type : {'total', 'transport', 'nu-transport', 'absorption', 'capture', 'fission', 'nu-fission', 'kappa-fission', 'scatter', 'nu-scatter', 'scatter matrix', 'nu-scatter matrix', 'multiplicity matrix', 'nu-fission matrix', 'chi', 'chi-prompt', 'inverse-velocity', 'prompt-nu-fission', 'prompt-nu-fission matrix', 'cmfd-coupling', 'nu-cmfd-coupling', 'cmfd-coupling-correction', 'nu-cmfd-coupling-correction'}
             The type of multi-group cross section object to return
         domain : openmc.Material or openmc.Cell or openmc.Universe or openmc.Mesh
             The domain for spatial homogenization
@@ -757,10 +781,16 @@ class MGXS(object):
         elif mgxs_type == 'prompt-nu-fission matrix':
             mgxs = NuFissionMatrixXS(domain, domain_type, energy_groups,
                                      prompt=True)
-        elif mgxs_type == 'current':
-            mgxs = Current(domain, domain_type, energy_groups)
-        elif mgxs_type == 'diffusion-coefficient':
-            mgxs = DiffusionCoefficient(domain, domain_type, energy_groups)
+        elif mgxs_type == 'cmfd-coupling':
+            mgxs = CMFDCoupling(domain, domain_type, energy_groups)
+        elif mgxs_type == 'nu-cmfd-coupling':
+            mgxs = CMFDCoupling(domain, domain_type, energy_groups, nu=True)
+        elif mgxs_type == 'cmfd-coupling-correction':
+            mgxs = CMFDCoupling(domain, domain_type, energy_groups,
+                                correction=True)
+        elif mgxs_type == 'nu-cmfd-coupling-correction':
+            mgxs = CMFDCoupling(domain, domain_type, energy_groups, nu=True,
+                                correction=True)
 
         mgxs.by_nuclide = by_nuclide
         mgxs.name = name
@@ -978,7 +1008,7 @@ class MGXS(object):
 
     def get_xs(self, groups='all', subdomains='all', nuclides='all',
                xs_type='macro', order_groups='increasing',
-               value='mean', squeeze=True, **kwargs):
+               value='mean', squeeze=True, matrix=False, **kwargs):
         r"""Returns an array of multi-group cross sections.
 
         This method constructs a 3D NumPy array for the requested
@@ -1009,12 +1039,17 @@ class MGXS(object):
         squeeze : bool
             A boolean representing whether to eliminate the extra dimensions
             of the multi-dimensional array to be returned. Defaults to True.
+        matrix : bool
+            A boolean representing whether to return the values as a matrix.
+            Note that a matrix can only be returned for a mesh domain and with
+            the MGXS summed over all nuclides. Defaults to False.
 
         Returns
         -------
-        numpy.ndarray
+        numpy.ndarray or scipy.sparse.dia.dia_matrix
             A NumPy array of the multi-group cross section indexed in the order
-            each group, subdomain and nuclide is listed in the parameters.
+            each group, subdomain and nuclide is listed in the parameters or a
+            SciPy sparse matrix blocked by energy group.
 
         Raises
         ------
@@ -1116,6 +1151,19 @@ class MGXS(object):
             # We want to squeeze out everything but the polar, azimuthal,
             # and energy group data.
             xs = self._squeeze_xs(xs)
+
+        if matrix:
+            if self.domain_type != 'mesh':
+                msg = 'Unable to return a matrix of the MGXS since the domain'\
+                      ' is not a mesh'
+                raise ValueError(msg)
+            elif self.by_nuclide:
+                if nuclides != 'all' and nuclides != 'sum' and nuclides != ['sum']:
+                    msg = 'Unable to return a matrix of the MGXS since the MGXS'\
+                          ' was requested by nuclide'
+                    raise ValueError(msg)
+
+            xs = sps.diags(xs.flatten())
 
         return xs
 
@@ -2103,7 +2151,8 @@ class MatrixMGXS(MGXS):
     def get_xs(self, in_groups='all', out_groups='all',
                subdomains='all', nuclides='all',
                xs_type='macro', order_groups='increasing',
-               row_column='inout', value='mean', squeeze=True, **kwargs):
+               row_column='inout', value='mean', squeeze=True, matrix=False,
+               **kwargs):
         """Returns an array of multi-group cross sections.
 
         This method constructs a 4D NumPy array for the requested
@@ -2141,12 +2190,17 @@ class MatrixMGXS(MGXS):
         squeeze : bool
             A boolean representing whether to eliminate the extra dimensions
             of the multi-dimensional array to be returned. Defaults to True.
+        matrix : bool
+            A boolean representing whether to return the values as a matrix.
+            Note that a matrix can only be returned for a mesh domain and with
+            the MGXS summed over all nuclides. Defaults to False.
 
         Returns
         -------
-        numpy.ndarray
+        numpy.ndarray or scipy.sparse.dia.dia_matrix
             A NumPy array of the multi-group cross section indexed in the order
-            each group and subdomain is listed in the parameters.
+            each group, subdomain and nuclide is listed in the parameters or a
+            SciPy sparse matrix blocked by energy group.
 
         Raises
         ------
@@ -2269,6 +2323,22 @@ class MatrixMGXS(MGXS):
             # We want to squeeze out everything but the polar, azimuthal,
             # and in/out energy group data.
             xs = self._squeeze_xs(xs)
+
+        if matrix:
+            if self.domain_type != 'mesh':
+                msg = 'Unable to return a matrix of the MGXS since the domain'\
+                      ' is not a mesh'
+                raise ValueError(msg)
+            elif self.by_nuclide:
+                if nuclides != 'all' and nuclides != 'sum' and nuclides != ['sum']:
+                    msg = 'Unable to return a matrix of the MGXS since the MGXS'\
+                          ' was requested by nuclide'
+                    raise ValueError(msg)
+
+            ng = self.energy_groups.num_groups
+            cells = np.prod(self.domain.dimension)
+            xs.shape = (cells, ng, ng)
+            xs = _block_diag(xs)
 
         return xs
 
@@ -3518,6 +3588,171 @@ class FissionXS(MGXS):
         else:
             self._rxn_type = 'prompt-nu-fission'
 
+    def get_xs(self, groups='all', subdomains='all', nuclides='all',
+               xs_type='macro', order_groups='increasing',
+               value='mean', squeeze=True, matrix=False, **kwargs):
+        r"""Returns an array of multi-group cross sections.
+
+        This method constructs a 3D NumPy array for the requested
+        multi-group cross section data for one or more subdomains
+        (1st dimension), energy groups (2nd dimension), and nuclides
+        (3rd dimension).
+
+        Parameters
+        ----------
+        groups : Iterable of Integral or 'all'
+            Energy groups of interest. Defaults to 'all'.
+        subdomains : Iterable of Integral or 'all'
+            Subdomain IDs of interest. Defaults to 'all'.
+        nuclides : Iterable of str or 'all' or 'sum'
+            A list of nuclide name strings (e.g., ['U235', 'U238']). The
+            special string 'all' will return the cross sections for all nuclides
+            in the spatial domain. The special string 'sum' will return the
+            cross section summed over all nuclides. Defaults to 'all'.
+        xs_type: {'macro', 'micro'}
+            Return the macro or micro cross section in units of cm^-1 or barns.
+            Defaults to 'macro'.
+        order_groups: {'increasing', 'decreasing'}
+            Return the cross section indexed according to increasing or
+            decreasing energy groups (decreasing or increasing energies).
+            Defaults to 'increasing'.
+        value : {'mean', 'std_dev', 'rel_err'}
+            A string for the type of value to return. Defaults to 'mean'.
+        squeeze : bool
+            A boolean representing whether to eliminate the extra dimensions
+            of the multi-dimensional array to be returned. Defaults to True.
+        matrix : bool
+            A boolean representing whether to return the values as a matrix.
+            Note that a matrix can only be returned for a mesh domain and with
+            the MGXS summed over all nuclides. Defaults to False.
+
+        Returns
+        -------
+        numpy.ndarray or scipy.sparse.dia.dia_matrix
+            A NumPy array of the multi-group cross section indexed in the order
+            each group, subdomain and nuclide is listed in the parameters or a
+            SciPy sparse matrix blocked by energy group.
+
+        Raises
+        ------
+        ValueError
+            When this method is called before the multi-group cross section is
+            computed from tally data.
+
+        """
+
+        cv.check_value('value', value, ['mean', 'std_dev', 'rel_err'])
+        cv.check_value('xs_type', xs_type, ['macro', 'micro'])
+
+        # FIXME: Unable to get microscopic xs for mesh domain because the mesh
+        # cells do not know the nuclide densities in each mesh cell.
+        if self.domain_type == 'mesh' and xs_type == 'micro':
+            msg = 'Unable to get micro xs for mesh domain since the mesh ' \
+                  'cells do not know the nuclide densities in each mesh cell.'
+            raise ValueError(msg)
+
+        filters = []
+        filter_bins = []
+
+        # Construct a collection of the domain filter bins
+        if not isinstance(subdomains, string_types):
+            cv.check_iterable_type('subdomains', subdomains, Integral,
+                                   max_depth=3)
+
+            filters.append(_DOMAIN_TO_FILTER[self.domain_type])
+            subdomain_bins = []
+            for subdomain in subdomains:
+                subdomain_bins.append(subdomain)
+            filter_bins.append(tuple(subdomain_bins))
+
+        # Construct list of energy group bounds tuples for all requested groups
+        if not isinstance(groups, string_types):
+            cv.check_iterable_type('groups', groups, Integral)
+            filters.append(openmc.EnergyFilter)
+            energy_bins = []
+            for group in groups:
+                energy_bins.append(
+                    (self.energy_groups.get_group_bounds(group),))
+            filter_bins.append(tuple(energy_bins))
+
+        # Construct a collection of the nuclides to retrieve from the xs tally
+        if self.by_nuclide:
+            if nuclides == 'all' or nuclides == 'sum' or nuclides == ['sum']:
+                query_nuclides = self.get_nuclides()
+            else:
+                query_nuclides = nuclides
+        else:
+            query_nuclides = ['total']
+
+        # If user requested the sum for all nuclides, use tally summation
+        if nuclides == 'sum' or nuclides == ['sum']:
+            xs_tally = self.xs_tally.summation(nuclides=query_nuclides)
+            xs = xs_tally.get_values(filters=filters,
+                                     filter_bins=filter_bins, value=value)
+        else:
+            xs = self.xs_tally.get_values(filters=filters,
+                                          filter_bins=filter_bins,
+                                          nuclides=query_nuclides, value=value)
+
+        # Divide by atom number densities for microscopic cross sections
+        if xs_type == 'micro':
+            if self.by_nuclide:
+                densities = self.get_nuclide_densities(nuclides)
+            else:
+                densities = self.get_nuclide_densities('sum')
+            if value == 'mean' or value == 'std_dev':
+                xs /= densities[np.newaxis, :, np.newaxis]
+
+        # Eliminate the trivial score dimension
+        xs = np.squeeze(xs, axis=len(xs.shape) - 1)
+        xs = np.nan_to_num(xs)
+
+        if groups == 'all':
+            num_groups = self.num_groups
+        else:
+            num_groups = len(groups)
+
+        # Reshape tally data array with separate axes for domain and energy
+        # Accomodate the polar and azimuthal bins if needed
+        num_subdomains = int(xs.shape[0] / (num_groups * self.num_polar *
+                                            self.num_azimuthal))
+        if self.num_polar > 1 or self.num_azimuthal > 1:
+            new_shape = (self.num_polar, self.num_azimuthal, num_subdomains,
+                         num_groups)
+        else:
+            new_shape = (num_subdomains, num_groups)
+        new_shape += xs.shape[1:]
+        xs = np.reshape(xs, new_shape)
+
+        # Reverse data if user requested increasing energy groups since
+        # tally data is stored in order of increasing energies
+        if order_groups == 'increasing':
+            xs = xs[..., ::-1, :]
+
+        if squeeze:
+            # We want to squeeze out everything but the polar, azimuthal,
+            # and energy group data.
+            xs = self._squeeze_xs(xs)
+
+        if matrix:
+            if self.domain_type != 'mesh':
+                msg = 'Unable to return a matrix of the MGXS since the domain'\
+                      ' is not a mesh'
+                raise ValueError(msg)
+            elif self.by_nuclide:
+                if nuclides != 'all' and nuclides != 'sum' and nuclides != ['sum']:
+                    msg = 'Unable to return a matrix of the MGXS since the MGXS'\
+                          ' was requested by nuclide'
+                    raise ValueError(msg)
+
+
+            ng = self.energy_groups.num_groups
+            cells = np.prod(self.domain.dimension)
+            xs = np.tile(xs, ng)
+            xs.shape = (cells, ng, ng)
+            xs = _block_diag(xs)
+
+        return xs
 
 class KappaFissionXS(MGXS):
     r"""A recoverable fission energy production rate multi-group cross section.
@@ -4504,7 +4739,8 @@ class ScatterMatrixXS(MatrixMGXS):
     def get_xs(self, in_groups='all', out_groups='all',
                subdomains='all', nuclides='all', moment='all',
                xs_type='macro', order_groups='increasing',
-               row_column='inout', value='mean', squeeze=True):
+               row_column='inout', value='mean', squeeze=True,
+               matrix=False):
         r"""Returns an array of multi-group cross sections.
 
         This method constructs a 5D NumPy array for the requested
@@ -4551,12 +4787,17 @@ class ScatterMatrixXS(MatrixMGXS):
         squeeze : bool
             A boolean representing whether to eliminate the extra dimensions
             of the multi-dimensional array to be returned. Defaults to True.
+        matrix : bool
+            A boolean representing whether to return the values as a matrix.
+            Note that a matrix can only be returned for a mesh domain and with
+            the MGXS summed over all nuclides. Defaults to False.
 
         Returns
         -------
-        numpy.ndarray
+        numpy.ndarray or scipy.sparse.dia.dia_matrix
             A NumPy array of the multi-group cross section indexed in the order
-            each group and subdomain is listed in the parameters.
+            each group, subdomain and nuclide is listed in the parameters or a
+            SciPy sparse matrix blocked by energy group.
 
         Raises
         ------
@@ -4709,6 +4950,23 @@ class ScatterMatrixXS(MatrixMGXS):
             # not be squeezed so 1-group, 1-angle problems have the correct
             # shape.
             xs = self._squeeze_xs(xs)
+
+        if matrix:
+            if self.domain_type != 'mesh':
+                msg = 'Unable to return a matrix of the MGXS since the domain'\
+                      ' is not a mesh'
+                raise ValueError(msg)
+            elif self.by_nuclide:
+                if nuclides != 'all' and nuclides != 'sum' and nuclides != ['sum']:
+                    msg = 'Unable to return a matrix of the MGXS since the MGXS'\
+                          ' was requested by nuclide'
+                    raise ValueError(msg)
+
+            ng = self.energy_groups.num_groups
+            cells = np.prod(self.domain.dimension)
+            xs.shape = (cells, ng, ng)
+            xs = _block_diag(xs)
+
         return xs
 
     def get_pandas_dataframe(self, groups='all', nuclides='all', moment='all',
@@ -5796,7 +6054,7 @@ class Chi(MGXS):
 
     def get_xs(self, groups='all', subdomains='all', nuclides='all',
                xs_type='macro', order_groups='increasing',
-               value='mean', squeeze=True, **kwargs):
+               value='mean', squeeze=True, matrix=False, **kwargs):
         """Returns an array of the fission spectrum.
 
         This method constructs a 3D NumPy array for the requested
@@ -5827,12 +6085,17 @@ class Chi(MGXS):
         squeeze : bool
             A boolean representing whether to eliminate the extra dimensions
             of the multi-dimensional array to be returned. Defaults to True.
+        matrix : bool
+            A boolean representing whether to return the values as a matrix.
+            Note that a matrix can only be returned for a mesh domain and with
+            the MGXS summed over all nuclides. Defaults to False.
 
         Returns
         -------
-        numpy.ndarray
+        numpy.ndarray or scipy.sparse.dia.dia_matrix
             A NumPy array of the multi-group cross section indexed in the order
-            each group, subdomain and nuclide is listed in the parameters.
+            each group, subdomain and nuclide is listed in the parameters or a
+            SciPy sparse matrix blocked by energy group.
 
         Raises
         ------
@@ -5953,6 +6216,23 @@ class Chi(MGXS):
             # We want to squeeze out everything but the polar, azimuthal,
             # and energy group data.
             xs = self._squeeze_xs(xs)
+
+        if matrix:
+            if self.domain_type != 'mesh':
+                msg = 'Unable to return a matrix of the MGXS since the domain'\
+                      ' is not a mesh'
+                raise ValueError(msg)
+            elif self.by_nuclide:
+                if nuclides != 'all' and nuclides != 'sum' and nuclides != ['sum']:
+                    msg = 'Unable to return a matrix of the MGXS since the MGXS'\
+                          ' was requested by nuclide'
+                    raise ValueError(msg)
+
+            ng = self.energy_groups.num_groups
+            cells = np.prod(self.domain.dimension)
+            xs = np.repeat(xs, ng)
+            xs.shape = (cells, ng, ng)
+            xs = _block_diag(xs)
 
         return xs
 
@@ -6188,7 +6468,7 @@ class InverseVelocity(MGXS):
 
 
 @add_metaclass(ABCMeta)
-class MGSurfaceCouplingTerm(MGXS):
+class CMFDCoupling(MGXS):
     """An abstract multi-group surface coupling term for some energy group
     structure on the surfaces of a mesh domain.
 
@@ -6212,77 +6492,408 @@ class MGSurfaceCouplingTerm(MGXS):
     name : str, optional
         Name of the coupling term. Used as a label to identify
         tallies in OpenMC 'tallies.xml' file.
+    num_polar : Integral, optional
+        Number of equi-width polar angle bins for angle discretization;
+        defaults to one bin
+    num_azimuthal : Integral, optional
+        Number of equi-width azimuthal angle bins for angle discretization;
+        defaults to one bin
+    nu : bool
+        If True, the cross section data will include neutron multiplication;
+        defaults to False
+    correction : bool
+        If True, the coupling term corrected with the cell-to-cell current will
+        be return; defaults to False
 
     Attributes
     ----------
     name : str, optional
-        Name of the multi-group coupling term
+        Name of the multi-group cross section
     rxn_type : str
-        Reaction type (e.g., 'current', etc.)
+        Reaction type (e.g., 'total', 'nu-fission', etc.)
+    nu : bool
+        If True, the cross section data will include neutron multiplication
+    correction : bool
+        If True, the coupling term corrected with the cell-to-cell current
     by_nuclide : bool
-        Must be False for coupling terms as this represents streaming between
-        domains and not an interaction within a domain
-    domain : openmc.Mesh
-        The domain for surface integration. Must be of type openmc.Mesh
-    domain_type : {'mesh'}
-        The domain type for surface integration. Must be 'mesh'.
+        If true, computes cross sections for each nuclide in domain
+    domain : Material or Cell or Universe or Mesh
+        Domain for spatial homogenization
+    domain_type : {'material', 'cell', 'distribcell', 'universe', 'mesh'}
+        Domain type for spatial homogenization
     energy_groups : openmc.mgxs.EnergyGroups
         Energy group structure for energy condensation
+    num_polar : Integral
+        Number of equi-width polar angle bins for angle discretization
+    num_azimuthal : Integral
+        Number of equi-width azimuthal angle bins for angle discretization
     tally_trigger : openmc.Trigger
         An (optional) tally precision trigger given to each tally used to
-        compute the coupling term
+        compute the cross section
     scores : list of str
-        The scores in each tally used to compute the multi-group coupling term
+        The scores in each tally used to compute the multi-group cross section
     filters : list of openmc.Filter
-        The filters in each tally used to compute the multi-group coupling term
+        The filters in each tally used to compute the multi-group cross section
     tally_keys : list of str
         The keys into the tallies dictionary for each tally used to compute
-        the multi-group coupling term
-    estimator : {'tracklength', 'analog'}
-        The tally estimator used to compute the multi-group coupling term. Must
-        be 'analog'.
+        the multi-group cross section
+    estimator : 'analog'
+        The tally estimator used to compute the multi-group cross section
     tallies : collections.OrderedDict
-        OpenMC tallies needed to compute the multi-group coupling term
+        OpenMC tallies needed to compute the multi-group cross section. The keys
+        are strings listed in the :attr:`TransportXS.tally_keys` property and
+        values are instances of :class:`openmc.Tally`.
     rxn_rate_tally : openmc.Tally
         Derived tally for the reaction rate tally used in the numerator to
-        compute the multi-group coupling term. This attribute is None
-        unless the multi-group coupling term has been computed.
+        compute the multi-group cross section. This attribute is None
+        unless the multi-group cross section has been computed.
     xs_tally : openmc.Tally
-        Derived tally for the multi-group coupling term. This attribute
-        is None unless the multi-group coupling term has been computed.
+        Derived tally for the multi-group cross section. This attribute
+        is None unless the multi-group cross section has been computed.
     num_subdomains : int
-        The number of subdomains is equal to the number of mesh surfaces times
-        two to account for both the incoming and outgoing current from the
-        mesh cell surfaces.
+        The number of subdomains is unity for 'material', 'cell' and 'universe'
+        domain types. This is equal to the number of cell instances
+        for 'distribcell' domain types (it is equal to unity prior to loading
+        tally data from a statepoint file).
     num_nuclides : int
-        The number of nuclides for which the multi-group coupling term is
-        being tracked. Must be unity since the coupling term tallies cannot be
-        performed by nuclide.
+        The number of nuclides for which the multi-group cross section is
+        being tracked. This is unity if the by_nuclide attribute is False.
     nuclides : Iterable of str or 'sum'
         The optional user-specified nuclides for which to compute cross
-        sections (e.g., 'U238', 'O16'). Must be 'sum' since the coupling term
-        tallies cannot be performed by nuclide.
+        sections (e.g., 'U238', 'O16'). If by_nuclide is True but nuclides
+        are not specified by the user, all nuclides in the spatial domain
+        are included. This attribute is 'sum' if by_nuclide is false.
     sparse : bool
-        Whether or not the MG coupling term's tallies use SciPy's LIL sparse
-        matrix format for compressed data storage
+        Whether or not the MGXS' tallies use SciPy's LIL sparse matrix format
+        for compressed data storage
     loaded_sp : bool
         Whether or not a statepoint file has been loaded with tally data
     derived : bool
-        Whether or not the MG coupling term is merged from one or more other
-        MG coupling terms
+        Whether or not the MGXS is merged from one or more other MGXS
     hdf5_key : str
-        The key used to index multi-group coupling terms in an HDF5 data store
+        The key used to index multi-group cross sections in an HDF5 data store
 
     """
 
-    def __init__(self, domain=None, domain_type=None, energy_groups=None,
-                 by_nuclide=False, name=''):
-        super(SurfaceMGXS, self).__init__(domain, domain_type, energy_groups,
-                                          by_nuclide, name)
+    def __init__(self, domain=None, domain_type=None, groups=None, nu=False,
+                 correction=False, by_nuclide=False, name='', num_polar=1,
+                 num_azimuthal=1):
+        super(CMFDCoupling, self).__init__(domain, domain_type, groups,
+                                           by_nuclide, name, num_polar,
+                                           num_azimuthal)
+
+        # Use tracklength estimators for the total MGXS term, and
+        # analog estimators for the transport correction term
+        self._estimator = ['analog', 'tracklength', 'tracklength', 'analog',
+                           'analog']
+        self._valid_estimators = ['analog']
+        self.nu = nu
+        self.correction = correction
+
+    def __deepcopy__(self, memo):
+        clone = super(CMFDCoupling, self).__deepcopy__(memo)
+        clone._nu = self.nu
+        clone._correction = self.correction
+        return clone
+
+    @property
+    def correction(self):
+        return self._correction
+
+    @correction.setter
+    def correction(self, correction):
+        self._correction = correction
 
     @property
     def scores(self):
-        return [self.rxn_type]
+        if not self.nu:
+            return ['current', 'flux', 'total', 'flux', 'scatter-1']
+        else:
+            return ['current', 'flux', 'total', 'flux', 'nu-scatter-1']
+
+    @property
+    def tally_keys(self):
+        return ['current', 'flux (tracklength)', 'total', 'flux (analog)', 'scatter-1']
+
+    @property
+    def filters(self):
+        group_edges = self.energy_groups.group_edges
+        energy_filter = openmc.EnergyFilter(group_edges)
+        surface_filter = openmc.EnergyFilter(group_edges)
+        energyout_filter = openmc.EnergyoutFilter(group_edges)
+        filters = [[energy_filter], [energy_filter], [energy_filter],
+                   [energy_filter], [energyout_filter]]
+
+        return self._add_angle_filters(filters)
+
+    @property
+    def rxn_rate_tally(self):
+        if self._rxn_rate_tally is None:
+            old_filt = self.tallies['scatter-1'].filters[-1]
+            new_filt = openmc.EnergyFilter(old_filt.bins)
+            new_filt.stride = old_filt.stride
+            self.tallies['scatter-1'].filters[-1] = new_filt
+
+            # Compute total cross section
+            total_xs = self.tallies['total'] / self.tallies['flux (tracklength)']
+
+            # Compute transport correction term
+            trans_corr = self.tallies['scatter-1'] / self.tallies['flux (analog)']
+
+            # Compute the diffusion coefficient
+            transport = total_xs - trans_corr
+            dif_coef = transport**(-1) / 3.0
+            dif_coef = dif_coef * self.tallies['flux (tracklength)']
+            dif_coef = dif_coef / self.tallies['flux (tracklength)']
+
+            # Get the dimensions of the mesh
+
+            dim     = tuple(self.domain.dimension[::-1])
+            width   = tuple(self.domain.width[::-1])
+            ng      = self.energy_groups.num_groups
+            nd      = len(dim)
+
+            if nd == 1:
+                dx = width[0] / dim[0]
+            elif nd == 2:
+                dx = width[1] / dim[1]
+                dy = width[0] / dim[0]
+            elif nd == 3:
+                dx = width[2] / dim[2]
+                dy = width[1] / dim[1]
+                dz = width[0] / dim[0]
+
+            # Create deep copy of the current tally to comput the net currents
+            net_current = copy.deepcopy(self.tallies['current'])
+
+
+            # Manipulate the partial current tally to get the net currents
+            pc_mean                = copy.deepcopy(net_current.mean)
+            pc_sdev                = copy.deepcopy(net_current.std_dev)
+            pc_mean.shape          = dim + (ng,4*nd)
+            pc_sdev.shape          = dim + (ng,4*nd)
+            nc_mean                = pc_mean[..., 0:4*nd:2] - pc_mean[..., 1:4*nd:2]
+            nc_mean[..., 0:2*nd:2] = -nc_mean[..., 0:2*nd:2]
+            nc_sdev                = np.sqrt(pc_sdev[..., 0:4*nd:2]**2 + pc_sdev[..., 1:4*nd:2]**2)
+
+            # Get the flux
+            flux_mean = copy.deepcopy(self.tallies['flux (tracklength)'].mean)
+            flux_sdev = copy.deepcopy(self.tallies['flux (tracklength)'].std_dev)
+            flux_mean.shape = dim + (ng,)
+            flux_sdev.shape = dim + (ng,)
+
+            # Create an array of the neighbor cell fluxes
+            flux_nbr_mean = np.zeros(dim + (ng, 2*nd))
+            flux_nbr_sdev = np.zeros(dim + (ng, 2*nd))
+            if nd == 1:
+                flux_nbr_mean[1: , ..., 0] = flux_mean[:-1, ...]
+                flux_nbr_sdev[1: , ..., 0] = flux_sdev[:-1, ...]
+                flux_nbr_mean[:-1, ..., 1] = flux_mean[1: , ...]
+                flux_nbr_sdev[:-1, ..., 1] = flux_sdev[1: , ...]
+            elif nd == 2:
+                flux_nbr_mean[1: , ..., 2] = flux_mean[:-1, ...]
+                flux_nbr_sdev[1: , ..., 2] = flux_sdev[:-1, ...]
+                flux_nbr_mean[:-1, ..., 3] = flux_mean[1: , ...]
+                flux_nbr_sdev[:-1, ..., 3] = flux_sdev[1: , ...]
+                flux_nbr_mean[:, 1: , ..., 0] = flux_mean[:, :-1, ...]
+                flux_nbr_sdev[:, 1: , ..., 0] = flux_sdev[:, :-1, ...]
+                flux_nbr_mean[:, :-1, ..., 1] = flux_mean[:, 1: , ...]
+                flux_nbr_sdev[:, :-1, ..., 1] = flux_sdev[:, 1: , ...]
+            elif nd == 3:
+                flux_nbr_mean[1: , ..., 4] = flux_mean[:-1, ...]
+                flux_nbr_sdev[1: , ..., 4] = flux_sdev[:-1, ...]
+                flux_nbr_mean[:-1, ..., 5] = flux_mean[1: , ...]
+                flux_nbr_sdev[:-1, ..., 5] = flux_sdev[1: , ...]
+                flux_nbr_mean[:, 1: , ..., 2] = flux_mean[:, :-1, ...]
+                flux_nbr_sdev[:, 1: , ..., 2] = flux_sdev[:, :-1, ...]
+                flux_nbr_mean[:, :-1, ..., 3] = flux_mean[:, 1: , ...]
+                flux_nbr_sdev[:, :-1, ..., 3] = flux_sdev[:, 1: , ...]
+                flux_nbr_mean[:, :, 1: , :, 0] = flux_mean[:, :, :-1, :]
+                flux_nbr_sdev[:, :, 1: , :, 0] = flux_sdev[:, :, :-1, :]
+                flux_nbr_mean[:, :, :-1, :, 1] = flux_mean[:, :, 1: , :]
+                flux_nbr_sdev[:, :, :-1, :, 1] = flux_sdev[:, :, 1: , :]
+
+            # Get the diffusion coefficients tall
+            dc_mean       = copy.deepcopy(dif_coef.mean)
+            dc_sdev       = copy.deepcopy(dif_coef.std_dev)
+            dc_mean.shape = dim + (ng,)
+            dc_sdev.shape = dim + (ng,)
+            dc_nbr_mean   = np.zeros(dim + (ng,2*nd))
+            dc_nbr_sdev   = np.zeros(dim + (ng,2*nd))
+
+            # Create array of neighbor cell diffusion coefficients
+            if nd == 1:
+                dc_nbr_mean[1: , ..., 0] = dc_mean[:-1, ...]
+                dc_nbr_sdev[1: , ..., 0] = dc_sdev[:-1, ...]
+                dc_nbr_mean[:-1, ..., 1] = dc_mean[1: , ...]
+                dc_nbr_sdev[:-1, ..., 1] = dc_sdev[1: , ...]
+            elif nd == 2:
+                dc_nbr_mean[1: , ..., 2] = dc_mean[:-1, ...]
+                dc_nbr_sdev[1: , ..., 2] = dc_sdev[:-1, ...]
+                dc_nbr_mean[:-1, ..., 3] = dc_mean[1: , ...]
+                dc_nbr_sdev[:-1, ..., 3] = dc_sdev[1: , ...]
+                dc_nbr_mean[:, 1: , ..., 0] = dc_mean[:, :-1, ...]
+                dc_nbr_sdev[:, 1: , ..., 0] = dc_sdev[:, :-1, ...]
+                dc_nbr_mean[:, :-1, ..., 1] = dc_mean[:, 1: , ...]
+                dc_nbr_sdev[:, :-1, ..., 1] = dc_sdev[:, 1: , ...]
+            elif nd == 3:
+                dc_nbr_mean[1: , ..., 4] = dc_mean[:-1, ...]
+                dc_nbr_sdev[1: , ..., 4] = dc_sdev[:-1, ...]
+                dc_nbr_mean[:-1, ..., 5] = dc_mean[1: , ...]
+                dc_nbr_sdev[:-1, ..., 5] = dc_sdev[1: , ...]
+                dc_nbr_mean[:, 1: , ..., 2] = dc_mean[:, :-1, ...]
+                dc_nbr_sdev[:, 1: , ..., 2] = dc_sdev[:, :-1, ...]
+                dc_nbr_mean[:, :-1, ..., 3] = dc_mean[:, 1: , ...]
+                dc_nbr_sdev[:, :-1, ..., 3] = dc_sdev[:, 1: , ...]
+                dc_nbr_mean[:, :, 1: , :, 0] = dc_mean[:, :, :-1, :]
+                dc_nbr_sdev[:, :, 1: , :, 0] = dc_sdev[:, :, :-1, :]
+                dc_nbr_mean[:, :, :-1, :, 1] = dc_mean[:, :, 1: , :]
+                dc_nbr_sdev[:, :, :-1, :, 1] = dc_sdev[:, :, 1: , :]
+
+
+            # Compute the linear finite difference diffusion term for interior surfaces
+            dc_lin_mean = np.zeros(dim + (ng, 2*nd))
+            dc_lin_sdev = np.zeros(dim + (ng, 2*nd))
+
+            if nd == 1:
+                mean_numer = 2 * dc_nbr_mean[1: , ..., 0] * dc_mean[1: , ...]
+                mean_denom = (dc_nbr_mean[1: , ..., 0] * dx + dc_mean[1: , ...] * dx)
+                dc_lin_mean[1: , ..., 0] = mean_numer / mean_denom
+                sdev_numer = mean_numer * np.sqrt(dc_nbr_sdev[1: , ..., 0]**2 + dc_sdev[1: , ...]**2)
+                sdev_denom = np.sqrt((dc_nbr_sdev[1: , ..., 0] * dx)**2 + (dc_sdev[1: , ...] * dx)**2)
+                dc_lin_sdev[1:, ..., 0] = dc_lin_mean[1: , ..., 0] * np.sqrt(sdev_numer**2 + sdev_denom**2)
+
+                mean_numer = 2 * dc_nbr_mean[:-1, ..., 1] * dc_mean[:-1, ...]
+                mean_denom = (dc_nbr_mean[:-1, ..., 1] * dx + dc_mean[:-1, ...] * dx)
+                dc_lin_mean[:-1, ..., 1] = mean_numer / mean_denom
+                sdev_numer = mean_numer * np.sqrt(dc_nbr_sdev[:-1, ..., 1]**2 + dc_sdev[:-1, ...]**2)
+                sdev_denom = np.sqrt((dc_nbr_sdev[:-1, ..., 1] * dx)**2 + (dc_sdev[:-1, ...] * dx)**2)
+                dc_lin_sdev[:-1, ..., 1] = dc_lin_mean[:-1, ..., 1] * np.sqrt(sdev_numer**2 + sdev_denom**2)
+
+            elif nd == 2:
+                mean_numer = 2 * dc_nbr_mean[1: , ..., 2] * dc_mean[1: , ...]
+                mean_denom = (dc_nbr_mean[1: , ..., 2] * dy + dc_mean[1: , ...] * dy)
+                dc_lin_mean[1:, ..., 2] = mean_numer / mean_denom
+                sdev_numer = mean_numer * np.sqrt(dc_nbr_sdev[1: , ..., 2]**2 + dc_sdev[1: , ...]**2)
+                sdev_denom = np.sqrt((dc_nbr_sdev[1: , ..., 2] * dy)**2 + (dc_sdev[1: , ...] * dy)**2)
+                dc_lin_sdev[1:, ..., 2] = dc_lin_mean[1: , ..., 2] * np.sqrt(sdev_numer**2 + sdev_denom**2)
+
+                mean_numer = 2 * dc_nbr_mean[:-1, ..., 3] * dc_mean[:-1, ...]
+                mean_denom = (dc_nbr_mean[:-1, ..., 3] * dy + dc_mean[:-1, ...] * dy)
+                dc_lin_mean[:-1, ..., 3] = mean_numer / mean_denom
+                sdev_numer = mean_numer * np.sqrt(dc_nbr_sdev[:-1, ..., 3]**2 + dc_sdev[:-1, ...]**2)
+                sdev_denom = np.sqrt((dc_nbr_sdev[:-1, ..., 3] * dy)**2 + (dc_sdev[:-1, ...] * dy)**2)
+                dc_lin_sdev[:-1, ..., 3] = dc_lin_mean[:-1, ..., 3] * np.sqrt(sdev_numer**2 + sdev_denom**2)
+
+                mean_numer = 2 * dc_nbr_mean[:, 1: , ..., 0] * dc_mean[:, 1: , ...]
+                mean_denom = (dc_nbr_mean[:, 1: , ..., 0] * dx + dc_mean[:, 1: , ...] * dx)
+                dc_lin_mean[:, 1: , ..., 0] = mean_numer / mean_denom
+                sdev_numer = mean_numer * np.sqrt(dc_nbr_sdev[:, 1: , ..., 0]**2 + dc_sdev[:, 1: , ...]**2)
+                sdev_denom = np.sqrt((dc_nbr_sdev[:, 1: , ..., 0] * dx)**2 + (dc_sdev[:, 1: , ...] * dx)**2)
+                dc_lin_sdev[:, 1:, ..., 0] = dc_lin_mean[:, 1: , ..., 0] * np.sqrt(sdev_numer**2 + sdev_denom**2)
+
+                mean_numer = 2 * dc_nbr_mean[:, :-1, ..., 1] * dc_mean[:, :-1, ...]
+                mean_denom = (dc_nbr_mean[:, :-1, ..., 1] * dx + dc_mean[:, :-1, ...] * dx)
+                dc_lin_mean[:, :-1, ..., 1] = mean_numer / mean_denom
+                sdev_numer = mean_numer * np.sqrt(dc_nbr_sdev[:, :-1, ..., 1]**2 + dc_sdev[:, :-1, ...]**2)
+                sdev_denom = np.sqrt((dc_nbr_sdev[:, :-1, ..., 1] * dx)**2 + (dc_sdev[:, :-1, ...] * dx)**2)
+                dc_lin_sdev[:, :-1, ..., 1] = dc_lin_mean[:, :-1, ..., 1] * np.sqrt(sdev_numer**2 + sdev_denom**2)
+
+            elif nd == 3:
+
+                mean_numer = 2 * dc_nbr_mean[1: , ..., 4] * dc_mean[1: , ...]
+                mean_denom = (dc_nbr_mean[1: , ..., 4] * dz + dc_mean[1: , ...] * dz)
+                dc_lin_mean[1:, ..., 4] = mean_numer / mean_denom
+                sdev_numer = mean_numer * np.sqrt(dc_nbr_sdev[1: , ..., 4]**2 + dc_sdev[1: , ...]**2)
+                sdev_denom = np.sqrt((dc_nbr_sdev[1: , ..., 4] * dz)**2 + (dc_sdev[1: , ...] * dz)**2)
+                dc_lin_sdev[1:, ..., 4] = dc_lin_mean[1: , ..., 4] * np.sqrt(sdev_numer**2 + sdev_denom**2)
+
+                mean_numer = 2 * dc_nbr_mean[:-1, ..., 5] * dc_mean[:-1, ...]
+                mean_denom = (dc_nbr_mean[:-1, ..., 5] * dz + dc_mean[:-1, ...] * dz)
+                dc_lin_mean[:-1, ..., 5] = mean_numer / mean_denom
+                sdev_numer = mean_numer * np.sqrt(dc_nbr_sdev[:-1, ..., 5]**2 + dc_sdev[:-1, ...]**2)
+                sdev_denom = np.sqrt((dc_nbr_sdev[:-1, ..., 5] * dz)**2 + (dc_sdev[:-1, ...] * dz)**2)
+                dc_lin_sdev[:-1, ..., 5] = dc_lin_mean[:-1, ..., 5] * np.sqrt(sdev_numer**2 + sdev_denom**2)
+
+                mean_numer = 2 * dc_nbr_mean[:, 1: , ..., 2] * dc_mean[:, 1: , ...]
+                mean_denom = (dc_nbr_mean[:, 1: , ..., 2] * dy + dc_mean[:, 1: , ...] * dy)
+                dc_lin_mean[:, 1:, ..., 2] = mean_numer / mean_denom
+                sdev_numer = mean_numer * np.sqrt(dc_nbr_sdev[:, 1: , ..., 2]**2 + dc_sdev[:, 1: , ...]**2)
+                sdev_denom = np.sqrt((dc_nbr_sdev[:, 1: , ..., 2] * dy)**2 + (dc_sdev[:, 1: , ...] * dy)**2)
+                dc_lin_sdev[:, 1:, ..., 2] = dc_lin_mean[:, 1: , ..., 2] * np.sqrt(sdev_numer**2 + sdev_denom**2)
+
+                mean_numer = 2 * dc_nbr_mean[:, :-1, ..., 3] * dc_mean[:, :-1, ...]
+                mean_denom = (dc_nbr_mean[:, :-1, ..., 3] * dy + dc_mean[:, :-1, ...] * dy)
+                dc_lin_mean[:, :-1, ..., 3] = mean_numer / mean_denom
+                sdev_numer = mean_numer * np.sqrt(dc_nbr_sdev[:, :-1, ..., 1]**2 + dc_sdev[:, :-1, ...]**2)
+                sdev_denom = np.sqrt((dc_nbr_sdev[:, :-1, ..., 3] * dy)**2 + (dc_sdev[:, :-1, ...] * dy)**2)
+                dc_lin_sdev[:, :-1, ..., 3] = dc_lin_mean[:, :-1, ..., 3] * np.sqrt(sdev_numer**2 + sdev_denom**2)
+
+                mean_numer = 2 * dc_nbr_mean[:, :, 1: , ..., 0] * dc_mean[:, :, 1: , ...]
+                mean_denom = (dc_nbr_mean[:, :, 1: , ..., 0] * dx + dc_mean[:, :, 1: , ...] * dx)
+                dc_lin_mean[:, :, 1:, ..., 0] = mean_numer / mean_denom
+                sdev_numer = mean_numer * np.sqrt(dc_nbr_sdev[:, :, 1: , ..., 0]**2 + dc_sdev[:, :, 1: , ...]**2)
+                sdev_denom = np.sqrt((dc_nbr_sdev[:, :, 1: , ..., 0] * dx)**2 + (dc_sdev[:, :, 1: , ...] * dx)**2)
+                dc_lin_sdev[:, :, 1:, ..., 0] = dc_lin_mean[:, :, 1: , ..., 0] * np.sqrt(sdev_numer**2 + sdev_denom**2)
+
+                mean_numer = 2 * dc_nbr_mean[:, :, :-1, ..., 1] * dc_mean[:, :, :-1, ...]
+                mean_denom = (dc_nbr_mean[:, :, :-1, ..., 1] * dx + dc_mean[:, :, :-1, ...] * dx)
+                dc_lin_mean[:, :, :-1, ..., 1] = mean_numer / mean_denom
+                sdev_numer = mean_numer * np.sqrt(dc_nbr_sdev[:, :, :-1, ..., 1]**2 + dc_sdev[:, :, :-1, ...]**2)
+                sdev_denom = np.sqrt((dc_nbr_sdev[:, :, :-1, ..., 1] * dx)**2 + (dc_sdev[:, :, :-1, ...] * dx)**2)
+                dc_lin_sdev[:, :, :-1, ..., 1] = dc_lin_mean[:, :, :-1, ..., 1] * np.sqrt(sdev_numer**2 + sdev_denom**2)
+
+            # Make any cells that have no dif coef or flux tally zero
+            indices = np.isnan(dc_lin_mean)
+            dc_lin_mean[indices] = 0.0
+            dc_lin_sdev[indices] = 0.0
+            indices = (dc_lin_mean == 0.)
+            dc_lin_mean[indices] = 0.0
+            dc_lin_sdev[indices] = 0.0
+
+            # Compute the correction term
+            dc_nonlin_mean = np.zeros(dim + (ng, 2*nd))
+            dc_nonlin_sdev = np.zeros(dim + (ng, 2*nd))
+            for d in range(nd):
+                mean_1     = (-flux_nbr_mean[..., d*2] + flux_mean)
+                mean_denom = ( flux_nbr_mean[..., d*2] + flux_mean)
+                sdev_denom = np.sqrt(flux_nbr_sdev[..., d*2]**2 + flux_sdev**2)
+                sdev_1     = np.abs(dc_lin_mean[..., d*2] * mean_1) * np.sqrt(dc_lin_mean[..., d*2]**2 + sdev_denom**2)
+                sdev_numer = np.sqrt(sdev_1**2 + nc_sdev[..., d*2]**2)
+
+                dc_nonlin_mean[..., d*2] = (-dc_lin_mean[..., d*2] * mean_1 - nc_mean[..., d*2]) / mean_denom
+                dc_nonlin_sdev[..., d*2] = np.abs(dc_nonlin_mean[..., d*2]) * np.sqrt(sdev_numer**2 + sdev_denom**2)
+
+                mean_1     = (flux_nbr_mean[..., d*2+1] - flux_mean)
+                mean_denom = (flux_nbr_mean[..., d*2+1] + flux_mean)
+                sdev_denom = np.sqrt(flux_nbr_sdev[..., d*2+1]**2 + flux_sdev**2)
+                sdev_1     = np.abs(dc_lin_mean[..., d*2+1] * mean_1) * np.sqrt(dc_lin_mean[..., d*2+1]**2 + sdev_denom**2)
+                sdev_numer = np.sqrt(sdev_1**2 + nc_sdev[..., d*2+1]**2)
+
+                dc_nonlin_mean[..., d*2+1] = (-dc_lin_mean[..., d*2+1] * mean_1 - nc_mean[..., d*2+1]) / mean_denom
+                dc_nonlin_sdev[..., d*2+1] = np.abs(dc_nonlin_mean[..., d*2+1]) * np.sqrt(sdev_numer**2 + sdev_denom**2)
+
+            # Ensure there are no nans
+            indices = np.isnan(dc_nonlin_mean)
+            dc_nonlin_mean[indices] = 0.
+            dc_nonlin_sdev[indices] = 0.
+
+            # Create tally for coupling coefficient
+            coupling_tally = copy.deepcopy(self.tallies['current'])
+            coupling_tally.find_filter(openmc.SurfaceFilter).bins = range(1,2*nd+1)
+
+            if self.correction:
+                coupling_tally._mean = dc_nonlin_mean.reshape((np.prod(dim) * ng * 2 * nd, 1, 1))
+                coupling_tally._std_dev = dc_nonlin_sdev.reshape((np.prod(dim) * ng * 2 * nd, 1, 1))
+            else:
+                coupling_tally._mean = dc_lin_mean.reshape((np.prod(dim) * ng * 2 * nd, 1, 1))
+                coupling_tally._std_dev = dc_lin_sdev.reshape((np.prod(dim) * ng * 2 * nd, 1, 1))
+
+            self._rxn_rate_tally = coupling_tally
+            self._rxn_rate_tally.sparse = self.sparse
+
+        return self._rxn_rate_tally
+
 
     @property
     def by_nuclide(self):
@@ -6303,24 +6914,15 @@ class MGSurfaceCouplingTerm(MGXS):
     def domain_type(self):
         return self._domain_type
 
-    @property
-    def num_polar(self):
-        return self._num_polar
-
-    @property
-    def num_azimuthal(self):
-        return self._num_azimuthal
-
     @by_nuclide.setter
     def by_nuclide(self, by_nuclide):
-        cv.check_type('by_nuclide', by_nuclide, False)
+        cv.check_value('by_nuclide', by_nuclide, [False])
         self._by_nuclide = by_nuclide
 
     @nuclides.setter
     def nuclides(self, nuclides):
         if nuclides != 'sum':
-            msg = 'MGSurfaceCouplingTerm cannot be tallied for separate '\
-                  'nuclides'
+            msg = 'CMFDCoupling cannot be tallied for separate nuclides'
             raise ValueError(msg)
         self._nuclides = nuclides
 
@@ -6337,16 +6939,6 @@ class MGSurfaceCouplingTerm(MGXS):
     def domain_type(self, domain_type):
         cv.check_value('domain type', domain_type, 'mesh')
         self._domain_type = domain_type
-
-    @num_polar.setter
-    def num_polar(self, num_polar):
-        msg = 'MGSurfaceCouplingTerm cannot be discretized by polar angle'
-        raise ValueError(msg)
-
-    @num_azimuthal.setter
-    def num_azimuthal(self, num_azimuthal):
-        msg = 'MGSurfaceCouplingTerm cannot be discretized by azimuthal angle'
-        raise ValueError(msg)
 
     @property
     def xs_tally(self):
@@ -6425,8 +7017,9 @@ class MGSurfaceCouplingTerm(MGXS):
         # Find, slice and store Tallies from StatePoint
         # The tally slicing is needed if tally merging was used
         for tally_type, tally in self.tallies.items():
-            surface_filter = openmc.SurfaceFilter(surface_bins)
-            tally.filters.append(surface_filter)
+            if tally_type == 'current':
+                surface_filter = openmc.SurfaceFilter(surface_bins)
+                tally.filters.append(surface_filter)
             sp_tally = statepoint.get_tally(
                 tally.scores, tally.filters, tally.nuclides,
                 estimator=tally.estimator, exact_filters=True)
@@ -6439,7 +7032,7 @@ class MGSurfaceCouplingTerm(MGXS):
 
     def get_xs(self, groups='all', subdomains='all', nuclides='all',
                xs_type='macro', order_groups='increasing',
-               value='mean', squeeze=True, **kwargs):
+               value='mean', squeeze=True, matrix=False, **kwargs):
         r"""Returns an array of multi-group cross sections.
 
         This method constructs a 3D NumPy array for the requested
@@ -6458,6 +7051,8 @@ class MGSurfaceCouplingTerm(MGXS):
             special string 'all' will return the cross sections for all nuclides
             in the spatial domain. The special string 'sum' will return the
             cross section summed over all nuclides. Defaults to 'all'.
+        subdomains : Iterable of Integral or 'all'
+            Surface IDs of interest. Defaults to 'all'.
         xs_type: {'macro', 'micro'}
             Return the macro or micro cross section in units of cm^-1 or barns.
             Defaults to 'macro'.
@@ -6470,12 +7065,17 @@ class MGSurfaceCouplingTerm(MGXS):
         squeeze : bool
             A boolean representing whether to eliminate the extra dimensions
             of the multi-dimensional array to be returned. Defaults to True.
+        matrix : bool
+            A boolean representing whether to return the values as a matrix.
+            Note that a matrix can only be returned for a mesh domain and with
+            the MGXS summed over all nuclides. Defaults to False.
 
         Returns
         -------
-        numpy.ndarray
+        numpy.ndarray or scipy.sparse.dia.dia_matrix
             A NumPy array of the multi-group cross section indexed in the order
-            each group, subdomain and nuclide is listed in the parameters.
+            each group, subdomain and nuclide is listed in the parameters or a
+            SciPy sparse matrix blocked by energy group.
 
         Raises
         ------
@@ -6486,14 +7086,7 @@ class MGSurfaceCouplingTerm(MGXS):
         """
 
         cv.check_value('value', value, ['mean', 'std_dev', 'rel_err'])
-        cv.check_value('xs_type', xs_type, ['macro', 'micro'])
-
-        # FIXME: Unable to get microscopic xs for mesh domain because the mesh
-        # cells do not know the nuclide densities in each mesh cell.
-        if self.domain_type == 'mesh' and xs_type == 'micro':
-            msg = 'Unable to get micro xs for mesh domain since the mesh ' \
-                  'cells do not know the nuclide densities in each mesh cell.'
-            raise ValueError(msg)
+        cv.check_value('xs_type', xs_type, ['macro'])
 
         filters = []
         filter_bins = []
@@ -6549,7 +7142,7 @@ class MGSurfaceCouplingTerm(MGXS):
 
         # Reshape tally data array with separate axes for domain and energy
         # Accomodate the polar and azimuthal bins if needed
-        num_surfaces = 4 * self.domain.num_dimensions
+        num_surfaces = 2 * self.domain.num_dimensions
         num_subdomains = int(xs.shape[0] / (num_groups * self.num_polar *
                                             self.num_azimuthal * num_surfaces))
         if self.num_polar > 1 or self.num_azimuthal > 1:
@@ -6570,108 +7163,237 @@ class MGSurfaceCouplingTerm(MGXS):
             # and energy group data.
             xs = self._squeeze_xs(xs)
 
+        if matrix:
+            if self.domain_type != 'mesh':
+                msg = 'Unable to return a matrix of the MGXS since the domain'\
+                      ' is not a mesh'
+                raise ValueError(msg)
+            elif self.by_nuclide:
+                if nuclides != 'all' and nuclides != 'sum' and nuclides != ['sum']:
+                    msg = 'Unable to return a matrix of the MGXS since the MGXS'\
+                          ' was requested by nuclide'
+                    raise ValueError(msg)
+
+
+            # Reshape the xs array
+            dim     = tuple(self.domain.dimension[::-1])
+            ng      = self.energy_groups.num_groups
+            nd      = len(dim)
+
+            # Get the dimensions in each direction
+            if nd == 1:
+                nx = dim[0]
+                ny = 1
+                nz = 1
+            elif nd == 2:
+                nx = dim[1]
+                ny = dim[0]
+                nz = 1
+            else:
+                nx = dim[2]
+                ny = dim[1]
+                nz = dim[0]
+
+            xs = np.copy(xs)
+            xs.shape = (np.prod(dim)*ng, 2*nd)
+
+            # Set the diagonal
+            if self.correction:
+                xs_diag = -xs[:, 1:2*nd:2].sum(axis=1) + xs[:, 0:2*nd:2].sum(axis=1)
+            else:
+                xs_diag =  xs[:, 1:2*nd:2].sum(axis=1) + xs[:, 0:2*nd:2].sum(axis=1)
+
+            xs_data = [xs_diag]
+            diags   = [0]
+
+            # Zero boundary dc_nonlinear
+            if not self.correction:
+                xs.shape = dim + (ng, 2*nd)
+                if nd == 1:
+                    xs[ 0,  :, 0] = 0.
+                    xs[-1,  :, 1] = 0.
+                elif nd == 2:
+                    xs[ :,  0, :, 0] = 0.
+                    xs[ :, -1, :, 1] = 0.
+                    xs[ 0,  :, :, 2] = 0.
+                    xs[-1,  :, :, 3] = 0.
+                elif nd == 3:
+                    xs[:  ,  :,  0, :, 0] = 0.
+                    xs[:  ,  :, -1, :, 1] = 0.
+                    xs[:  ,  0,  :, :, 2] = 0.
+                    xs[:  , -1,  :, :, 3] = 0.
+                    xs[0  ,  :,  :, :, 4] = 0.
+                    xs[-1 ,  :,  :, :, 5] = 0.
+
+                xs.shape = (np.prod(dim)*ng, 2*nd)
+
+            # Set the off-diagonals
+            if nx > 1:
+
+                if self.correction:
+                    xs_data.append( xs[ng: , 0])
+                    xs_data.append(-xs[:-ng, 1])
+                else:
+                    xs_data.append(-xs[ng: , 0])
+                    xs_data.append(-xs[:-ng, 1])
+
+                diags.append(-ng)
+                diags.append(ng)
+            if ny > 1:
+                if self.correction:
+                    xs_data.append( xs[nx*ng:, 2])
+                    xs_data.append(-xs[:-nx*ng, 3])
+                else:
+                    xs_data.append(-xs[nx*ng: , 2])
+                    xs_data.append(-xs[:-nx*ng, 3])
+
+                diags.append(-nx*ng)
+                diags.append(nx*ng)
+            if nz > 1:
+                if self.correction:
+                    xs_data.append( xs[nx*ny*ng: , 4])
+                    xs_data.append(-xs[:-nx*ny*ng, 5])
+                else:
+                    xs_data.append(-xs[nx*ny*ng: , 4])
+                    xs_data.append(-xs[:-nx*ny*ng, 5])
+
+                diags.append(-nx*ny*ng)
+                diags.append(nx*ny*ng)
+
+            xs = sps.diags(xs_data, diags)
+
         return xs
 
+    def print_xs(self, subdomains='all', nuclides='all', xs_type='macro'):
+        """Print a string representation for the multi-group cross section.
 
-class Current(MGSurfaceCouplingTerm):
-    r"""A current multi-group surface coupling term.
+        Parameters
+        ----------
+        subdomains : Iterable of Integral or 'all'
+            The subdomain IDs of the cross sections to include in the report.
+            Defaults to 'all'.
+        nuclides : Iterable of str or 'all' or 'sum'
+            The nuclides of the cross-sections to include in the report. This
+            may be a list of nuclide name strings (e.g., ['U235', 'U238']).
+            The special string 'all' will report the cross sections for all
+            nuclides in the spatial domain. The special string 'sum' will report
+            the cross sections summed over all nuclides. Defaults to 'all'.
+        xs_type: {'macro', 'micro'}
+            Return the macro or micro cross section in units of cm^-1 or barns.
+            Defaults to 'macro'.
 
-    This class can be used for both OpenMC input generation and tally data
-    post-processing to compute surface- and energy-integrated
-    multi-group surface current for multi-group neutronics calculations. At
-    a minimum, one needs to set the :attr:`Current.energy_groups` and
-    :attr:`Current.domain` properties. The domain must be a openmc.Mesh object.
-    Tallies for the current on the specified domain surfaces are generated
-    automatically via the :attr:`Current.tallies` property, which can then be
-    appended to a :class:`openmc.Tallies` instance.
+        """
 
-    For post-processing, the :meth:`MGXS.load_from_statepoint` will pull in the
-    necessary data to compute multi-group surface coupling term from a
-    :class:`openmc.StatePoint` instance. The derived multi-group coupling term
-    can then be obtained from the :attr:`Current.xs_tally` property.
+        # Construct a collection of the subdomains to report
+        if not isinstance(subdomains, string_types):
+            cv.check_iterable_type('subdomains', subdomains, Integral)
+        elif self.domain_type == 'distribcell':
+            subdomains = np.arange(self.num_subdomains, dtype=np.int)
+        elif self.domain_type == 'mesh':
+            xyz = [range(1, x + 1) for x in self.domain.dimension]
+            subdomains = list(itertools.product(*xyz))
+        else:
+            subdomains = [self.domain.id]
 
-    The current is computed by tallying all the particles that cross a given
-    surface :math:`S` and energy group :math:`[E_g,E_{g-1}]`.
+        # Construct a collection of the nuclides to report
+        if self.by_nuclide:
+            if nuclides == 'all':
+                nuclides = self.get_nuclides()
+            elif nuclides == 'sum':
+                nuclides = ['sum']
+            else:
+                cv.check_iterable_type('nuclides', nuclides, string_types)
+        else:
+            nuclides = ['sum']
 
-    Parameters
-    ----------
-    domain : openmc.Mesh
-        The domain for surface integration. Must be of type openmc.Mesh
-    domain_type : {'mesh'}
-        The domain type for surface integration. Must be 'mesh'.
-    energy_groups : openmc.mgxs.EnergyGroups
-        The energy group structure for energy condensation
-    by_nuclide : bool
-        Must be False for coupling terms as this represents streaming between
-        domains and not an interaction within a domain
-    name : str, optional
-        Name of the coupling term. Used as a label to identify
-        tallies in OpenMC 'tallies.xml' file.
+        cv.check_value('xs_type', xs_type, ['macro', 'micro'])
 
-    Attributes
-    ----------
-    name : str, optional
-        Name of the multi-group coupling term
-    rxn_type : str
-        Reaction type (e.g., 'current', etc.)
-    by_nuclide : bool
-        Must be False for coupling terms as this represents streaming between
-        domains and not an interaction within a domain
-    domain : openmc.Mesh
-        The domain for surface integration. Must be of type openmc.Mesh
-    domain_type : {'mesh'}
-        The domain type for surface integration. Must be 'mesh'.
-    energy_groups : openmc.mgxs.EnergyGroups
-        Energy group structure for energy condensation
-    tally_trigger : openmc.Trigger
-        An (optional) tally precision trigger given to each tally used to
-        compute the coupling term
-    scores : list of str
-        The scores in each tally used to compute the multi-group coupling term
-    filters : list of openmc.Filter
-        The filters in each tally used to compute the multi-group coupling term
-    tally_keys : list of str
-        The keys into the tallies dictionary for each tally used to compute
-        the multi-group coupling term
-    estimator : {'tracklength', 'analog'}
-        The tally estimator used to compute the multi-group coupling term. Must
-        be 'analog'.
-    tallies : collections.OrderedDict
-        OpenMC tallies needed to compute the multi-group coupling term
-    rxn_rate_tally : openmc.Tally
-        Derived tally for the reaction rate tally used in the numerator to
-        compute the multi-group coupling term. This attribute is None
-        unless the multi-group coupling term has been computed.
-    xs_tally : openmc.Tally
-        Derived tally for the multi-group coupling term. This attribute
-        is None unless the multi-group coupling term has been computed.
-    num_subdomains : int
-        The number of subdomains is equal to the number of mesh surfaces times
-        two to account for both the incoming and outgoing current from the
-        mesh cell surfaces.
-    num_nuclides : int
-        The number of nuclides for which the multi-group coupling term is
-        being tracked. Must be unity since the coupling term tallies cannot be
-        performed by nuclide.
-    nuclides : Iterable of str or 'sum'
-        The optional user-specified nuclides for which to compute cross
-        sections (e.g., 'U238', 'O16'). Must be 'sum' since the coupling term
-        tallies cannot be performed by nuclide.
-    sparse : bool
-        Whether or not the MG coupling term's tallies use SciPy's LIL sparse
-        matrix format for compressed data storage
-    loaded_sp : bool
-        Whether or not a statepoint file has been loaded with tally data
-    derived : bool
-        Whether or not the MG coupling term is merged from one or more other
-        MG coupling terms
-    hdf5_key : str
-        The key used to index multi-group coupling terms in an HDF5 data store
+        # Build header for string with type and domain info
+        string = 'Multi-Group XS\n'
+        string += '{0: <16}=\t{1}\n'.format('\tReaction Type', self.rxn_type)
+        string += '{0: <16}=\t{1}\n'.format('\tDomain Type', self.domain_type)
+        string += '{0: <16}=\t{1}\n'.format('\tDomain ID', self.domain.id)
 
-    """
+        # Generate the header for an individual XS
+        xs_header = '\tCross Sections [{0}]:'.format(self.get_units(xs_type))
 
-    def __init__(self, domain=None, domain_type=None,
-                 groups=None, by_nuclide=False, name=''):
-        super(Current, self).__init__(domain, domain_type,
-                                      groups, by_nuclide, name)
-        self._rxn_type = 'current'
+        # If cross section data has not been computed, only print string header
+        if self.tallies is None:
+            print(string)
+            return
+
+        # Set polar/azimuthal bins
+        if self.num_polar > 1 or self.num_azimuthal > 1:
+            pol_bins = np.linspace(0., np.pi, num=self.num_polar + 1,
+                                   endpoint=True)
+            azi_bins = np.linspace(-np.pi, np.pi, num=self.num_azimuthal + 1,
+                                   endpoint=True)
+
+        # Loop over all subdomains
+        for subdomain in subdomains:
+
+            if self.domain_type == 'distribcell' or self.domain_type == 'mesh':
+                string += '{0: <16}=\t{1}\n'.format('\tSubdomain', subdomain)
+
+            # Loop over all Nuclides
+            for nuclide in nuclides:
+
+                # Build header for nuclide type
+                if nuclide != 'sum':
+                    string += '{0: <16}=\t{1}\n'.format('\tNuclide', nuclide)
+
+                # Build header for cross section type
+                string += '{0: <16}\n'.format(xs_header)
+                template = '{0: <12}Group {1} [{2: <10} - {3: <10}eV]:\t'
+
+                average_xs = self.get_xs(nuclides=[nuclide],
+                                         subdomains=[subdomain],
+                                         xs_type=xs_type, value='mean')
+                rel_err_xs = self.get_xs(nuclides=[nuclide],
+                                         subdomains=[subdomain],
+                                         xs_type=xs_type, value='rel_err')
+                rel_err_xs = rel_err_xs * 100.
+
+                if self.num_polar > 1 or self.num_azimuthal > 1:
+                    # Loop over polar, azimuthal, and energy group ranges
+                    for pol in range(len(pol_bins) - 1):
+                        pol_low, pol_high = pol_bins[pol: pol + 2]
+                        for azi in range(len(azi_bins) - 1):
+                            azi_low, azi_high = azi_bins[azi: azi + 2]
+                            string += '\t\tPolar Angle: [{0:5f} - {1:5f}]'.format(
+                                pol_low, pol_high) + \
+                                '\tAzimuthal Angle: [{0:5f} - {1:5f}]'.format(
+                                azi_low, azi_high) + '\n'
+                            for group in range(1, self.num_groups + 1):
+                                bounds = \
+                                    self.energy_groups.get_group_bounds(group)
+                                string += '\t' + template.format('', group,
+                                                                 bounds[0],
+                                                                 bounds[1])
+
+                                string += '{0:.2e} +/- {1:.2e}%'.format(
+                                    average_xs[pol, azi, group - 1],
+                                    rel_err_xs[pol, azi, group - 1])
+                                string += '\n'
+                            string += '\n'
+                else:
+
+                    for surface in range(2*self.domain.num_dimensions):
+
+                        # Build header for surface
+                        string += '{0: <12}Surface {1}:\n'\
+                                  .format('', _SURFACE_NAMES[surface+1])
+
+                        # Loop over energy groups
+                        for group in range(1, self.num_groups + 1):
+                            bounds = self.energy_groups.get_group_bounds(group)
+                            string += template.format('', group, bounds[0],
+                                                      bounds[1])
+                            string += '{0:.2e} +/- {1:.2e}%'.format(
+                                average_xs[group - 1][surface], rel_err_xs[group - 1][surface])
+                            string += '\n'
+                        string += '\n'
+                    string += '\n'
+                string += '\n'
+
+        print(string)

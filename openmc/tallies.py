@@ -810,6 +810,9 @@ class Tally(IDManagerMixin):
         if self.estimator != other.estimator:
             return False
 
+        if 'current' in self.scores or 'current' in other.scores:
+            return False
+
         equal_filters = sorted(self.filters) == sorted(other.filters)
         equal_nuclides = sorted(self.nuclides) == sorted(other.nuclides)
         equal_scores = sorted(self.scores) == sorted(other.scores)

@@ -94,28 +94,33 @@ settings_file.export_to_xml()
 #                   Exporting to OpenMC tallies.xml file
 ###############################################################################
 
+# Instantiate a tally mesh
+mesh = openmc.Mesh(mesh_id=1)
+mesh.type = 'regular'
+mesh.dimension = [2, 2]
+mesh.lower_left = [-0.62992, -0.62992]
+mesh.upper_right = [0.62992, 0.62992]
+
+
 # Instantiate some tally Filters
-cell_filter = openmc.CellFilter(cell2)
-energy_filter = openmc.EnergyFilter([0., 20.e6])
-energyout_filter = openmc.EnergyoutFilter([0., 20.e6])
+energy_filter = openmc.EnergyFilter([0., 4., 20.e6])
+mesh_filter = openmc.MeshFilter(mesh)
 
 # Instantiate the first Tally
 first_tally = openmc.Tally(tally_id=1, name='first tally')
-first_tally.filters = [cell_filter]
-scores = ['total', 'scatter', 'nu-scatter',
-          'absorption', 'fission', 'nu-fission']
+first_tally.filters = [mesh_filter, energy_filter]
+scores = ['current']
 first_tally.scores = scores
 
-# Instantiate the second Tally
-second_tally = openmc.Tally(tally_id=2, name='second tally')
-second_tally.filters = [cell_filter, energy_filter]
-second_tally.scores = scores
-
-# Instantiate the third Tally
-third_tally = openmc.Tally(tally_id=3, name='third tally')
-third_tally.filters = [cell_filter, energy_filter, energyout_filter]
-third_tally.scores = ['scatter', 'nu-scatter', 'nu-fission']
-
 # Instantiate a Tallies collection and export to XML
-tallies_file = openmc.Tallies((first_tally, second_tally, third_tally))
+tallies_file = openmc.Tallies((first_tally,))
 tallies_file.export_to_xml()
+
+openmc.run()
+
+# Load the last statepoint file
+sp = openmc.StatePoint('statepoint.15.h5')
+
+tally = sp.get_tally(id=1)
+print(tally)
+print(tally.find_filter(openmc.SurfaceFilter))

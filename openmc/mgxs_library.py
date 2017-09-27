@@ -89,6 +89,10 @@ class XSdata(object):
         is "angle".
     total : list of numpy.ndarray
         Group-wise total cross section.
+    diffusion_coefficient : list of numpy.ndarray
+        Group-wise diffusion coefficient.
+    current : list of numpy.ndarray
+        Group-wise surface current.
     absorption : list of numpy.ndarray
         Group-wise absorption cross section.
     scatter_matrix : list of numpy.ndarray
@@ -136,7 +140,8 @@ class XSdata(object):
         Dictionary with keys of _XS_SHAPES and iterable of int values with the
         corresponding shapes where "Order" corresponds to the pn scattering
         order, "G" corresponds to incoming energy group, "G'" corresponds to
-        outgoing energy group, and "DG" corresponds to delayed group.
+        outgoing energy group, "S" correspons to the surface of a mesh cell,
+        and "DG" corresponds to delayed group.
 
     Notes
     -----
@@ -153,7 +158,10 @@ class XSdata(object):
     [G][G'][Order]: scatter_matrix
 
     [G]: total, absorption, fission, kappa_fission, nu_fission,
-         prompt_nu_fission, delayed_nu_fission, inverse_velocity
+         prompt_nu_fission, delayed_nu_fission, inverse_velocity,
+         diffusion_coefficient
+
+    [S][G]: current
 
     [G']: chi, chi_prompt, chi_delayed
 
@@ -185,6 +193,7 @@ class XSdata(object):
         self._num_polar = None
         self._num_azimuthal = None
         self._total = len(temperatures) * [None]
+        self._diffusion_coefficient = len(temperatures) * [None]
         self._absorption = len(temperatures) * [None]
         self._scatter_matrix = len(temperatures) * [None]
         self._multiplicity_matrix = len(temperatures) * [None]
@@ -199,6 +208,7 @@ class XSdata(object):
         self._beta = len(temperatures) * [None]
         self._decay_rate = len(temperatures) * [None]
         self._inverse_velocity = len(temperatures) * [None]
+        self._current = len(temperatures) * [None]
         self._xs_shapes = None
 
     def __deepcopy__(self, memo):
@@ -219,6 +229,8 @@ class XSdata(object):
             clone._num_polar = self._num_polar
             clone._num_azimuthal = self._num_azimuthal
             clone._total = copy.deepcopy(self._total, memo)
+            clone._diffusion_coefficient = \
+                copy.deepcopy(self._diffusion_coefficient, memo)
             clone._absorption = copy.deepcopy(self._absorption, memo)
             clone._scatter_matrix = copy.deepcopy(self._scatter_matrix, memo)
             clone._multiplicity_matrix = \
@@ -237,6 +249,7 @@ class XSdata(object):
             clone._decay_rate = copy.deepcopy(self._decay_rate, memo)
             clone._inverse_velocity = \
                 copy.deepcopy(self._inverse_velocity, memo)
+            clone._current = copy.deepcopy(self._current, memo)
             clone._xs_shapes = copy.deepcopy(self._xs_shapes, memo)
 
             memo[id(self)] = clone
@@ -469,6 +482,7 @@ class XSdata(object):
         self.temperatures = temp_store
 
         self._total.append(None)
+        self._diffusion_coefficient.append(None)
         self._absorption.append(None)
         self._scatter_matrix.append(None)
         self._multiplicity_matrix.append(None)
@@ -483,6 +497,7 @@ class XSdata(object):
         self._beta.append(None)
         self._decay_rate.append(None)
         self._inverse_velocity.append(None)
+        self._current.append(None)
 
     def set_total(self, total, temperature=294.):
         """This method sets the cross section for this XSdata object at the
@@ -513,6 +528,36 @@ class XSdata(object):
 
         i = np.where(self.temperatures == temperature)[0][0]
         self._total[i] = total
+
+    def set_diffusion_coefficient(self, dif_coef, temperature=294.):
+        """This method sets the cross section for this XSdata object at the
+        provided temperature.
+
+        Parameters
+        ----------
+        dif_coef : np.ndarray
+            Diffusion coefficient
+        temperature : float
+            Temperature (in Kelvin) of the data. Defaults to room temperature
+            (294K).
+
+        See also
+        --------
+        openmc.mgxs_library.set_diffusion_coefficient_mgxs()
+
+        """
+
+        # Get the accepted shapes for this xs
+        shapes = [self.xs_shapes["[G]"]]
+
+        # Convert to a numpy array so we can easily get the shape for checking
+        dif_coef = np.asarray(dif_coef)
+        check_value('diffusion_coefficient shape', dif_coef.shape, shapes)
+        check_type('temperature', temperature, Real)
+        check_value('temperature', temperature, self.temperatures)
+
+        i = np.where(self.temperatures == temperature)[0][0]
+        self._diffusion_coefficient[i] = dif_coef
 
     def set_absorption(self, absorption, temperature=294.):
         """This method sets the cross section for this XSdata object at the
@@ -953,6 +998,33 @@ class XSdata(object):
         i = np.where(self.temperatures == temperature)[0][0]
         self._inverse_velocity[i] = inv_vel
 
+    def set_current(self, current, temperature=294.):
+        """This method sets the current for this XSdata object at the
+        provided temperature.
+
+        Parameters
+        ----------
+        current : np.ndarray
+            Surface current.
+        temperature : float
+            Temperature (in Kelvin) of the data. Defaults to room temperature
+            (294K).
+
+        """
+
+        # Convert to a numpy array so we can easily get the shape for checking
+        current = np.asarray(current)
+        check_type('temperature', temperature, Real)
+        check_value('temperature', temperature, self.temperatures)
+        num_surfaces = current.flatten().shape[0] / \
+                       self.energy_groups.num_groups
+        check_value('current num surfaces', num_surfaces, [4,8,12])
+        check_value('current num groups', current.shape[1],
+                    self.energy_groups.num_groups)
+
+        i = np.where(self.temperatures == temperature)[0][0]
+        self._current[i] = current
+
     def set_total_mgxs(self, total, temperature=294., nuclide='total',
                        xs_type='macro', subdomain=None):
         """This method allows for an openmc.mgxs.TotalXS or
@@ -994,6 +1066,46 @@ class XSdata(object):
         i = np.where(self.temperatures == temperature)[0][0]
         self._total[i] = total.get_xs(nuclides=nuclide, xs_type=xs_type,
                                       subdomains=subdomain)
+
+    def set_diffusion_coefficient_mgxs(self, dif_coef, temperature=294.,
+                                       nuclide='total', subdomain=None):
+        """This method allows for an openmc.mgxs.DiffusionCoefficient to be used
+        to set the diffusion coefficient for this XSdata object.
+
+        Parameters
+        ----------
+        dif_coef : openmc.mgxs.DiffusionCoefficient
+            MGXS Object containing the diffusion coefficient for the domain of
+            interest.
+        temperature : float
+            Temperature (in Kelvin) of the data. Defaults to room temperature
+            (294K).
+        nuclide : str
+            Individual nuclide (or 'total' if obtaining material-wise data)
+            to gather data for.  Defaults to 'total'.
+        subdomain : iterable of int
+            If the MGXS contains a mesh domain type, the subdomain parameter
+            specifies which mesh cell (i.e., [i, j, k] index) to use.
+
+        See also
+        --------
+        openmc.mgxs.Library.create_mg_library()
+        openmc.mgxs.Library.get_xsdata()
+
+        """
+
+        check_type('diffusion-coefficient', dif_coef,
+                   (openmc.mgxs.DiffusionCoefficient,))
+        check_value('energy_groups', dif_coef.energy_groups,
+                    [self.energy_groups])
+        check_value('domain_type', dif_coef.domain_type,
+                    openmc.mgxs.DOMAIN_TYPES)
+        check_type('temperature', temperature, Real)
+        check_value('temperature', temperature, self.temperatures)
+
+        i = np.where(self.temperatures == temperature)[0][0]
+        self._dif_coef[i] = dif_coef.get_xs(nuclides=nuclide,
+                                            subdomains=subdomain)
 
     def set_absorption_mgxs(self, absorption, temperature=294.,
                             nuclide='total', xs_type='macro', subdomain=None):
@@ -1691,6 +1803,40 @@ class XSdata(object):
         self._inverse_velocity[i] = inverse_velocity.get_xs(
             nuclides=nuclide, xs_type=xs_type, subdomains=subdomain)
 
+    def set_current_mgxs(self, current, temperature=294.,
+                         subdomain=None):
+        """This method allows for an openmc.mgxs.Current
+        to be used to set the current for this XSdata object.
+
+        Parameters
+        ----------
+        current : openmc.mgxs.Current
+            MGXS object containing the current for the surfaces of the
+            mesh domain of interest.
+        temperature : float
+            Temperature (in Kelvin) of the data. Defaults to room temperature
+            (294K).
+        subdomain : iterable of int
+            The mesh subdomain parameter specifies which mesh cell
+            (i.e., [i, j, k] index) to use.
+
+        See also
+        --------
+        openmc.mgxs.Library.create_mg_library()
+        openmc.mgxs.Library.get_xsdata()
+
+        """
+
+        check_type('current', current, openmc.mgxs.Current)
+        check_value('energy_groups', current.energy_groups,
+                    [self.energy_groups])
+        check_value('domain_type', current.domain_type, 'mesh')
+        check_type('temperature', temperature, Real)
+        check_value('temperature', temperature, self.temperatures)
+
+        i = np.where(self.temperatures == temperature)[0][0]
+        self._current[i] = current.get_xs(subdomains=subdomain)
+
     def convert_representation(self, target_representation, num_polar=None,
                                num_azimuthal=None):
         """Produce a new XSdata object with the same data, but converted to the
@@ -1768,7 +1914,8 @@ class XSdata(object):
                        'scatter_matrix', 'multiplicity_matrix',
                        'prompt_nu_fission', 'delayed_nu_fission',
                        'kappa_fission', 'chi', 'chi_prompt', 'chi_delayed',
-                       'beta', 'decay_rate', 'inverse_velocity']:
+                       'beta', 'decay_rate', 'inverse_velocity',
+                       'diffusion_coefficient']:
                 # Get the original data
                 orig_data = getattr(self, '_' + xs)[i]
                 if orig_data is not None:
@@ -2005,6 +2152,13 @@ class XSdata(object):
                                  'writing the HDF5 library')
 
             xs_grp.create_dataset("absorption", data=self._absorption[i])
+
+            if self._diffusion_coefficient[i] is not None:
+                xs_grp.create_dataset("diffusion-coefficient",
+                                      data=self._diffusion_coefficient[i])
+
+            if self._current[i] is not None:
+                xs_grp.create_dataset("current", data=self._current[i])
 
             if self.fissionable:
                 if self._fission[i] is not None:
